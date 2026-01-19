@@ -55,7 +55,7 @@
   "author": "Finqu",
   "license": "ISC",
   "bin": {
-    "finqu": "./dist/index.js"
+    "finqu": "dist/index.js"
   },
   "files": [
     "dist"
