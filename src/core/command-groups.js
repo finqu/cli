@@ -12,11 +12,7 @@ export const COMMAND_GROUPS = {
   theme: {
     description: 'Theme development and deployment commands',
   },
-  // Future groups can be added here:
-  // apps: {
-  //   description: 'Application management commands',
-  // },
-  // storefront: {
-  //   description: 'Storefront management commands',
-  // },
+  storefront: {
+    description: 'Storefront development commands',
+  },
 };

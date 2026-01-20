@@ -50,6 +50,28 @@ const mockWatchCmd = {
   execute: vi.fn(),
   setApp: vi.fn(),
 };
+const mockStorefrontBuildCmd = {
+  name: 'build',
+  description: 'Build Puck configuration',
+  group: 'storefront',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockStorefrontDevCmd = {
+  name: 'dev',
+  description: 'Start development server',
+  group: 'storefront',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockStorefrontCreateCmd = {
+  name: 'create',
+  syntax: 'create [project-name]',
+  description: 'Create a new storefront project',
+  group: 'storefront',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
 
 vi.mock('../../src/commands/configure.js', () => ({
   createConfigureCommand: vi.fn(() => mockConfigureCmd),
@@ -69,6 +91,15 @@ vi.mock('../../src/commands/delete.js', () => ({
 vi.mock('../../src/commands/watch.js', () => ({
   createWatchCommand: vi.fn(() => mockWatchCmd),
 }));
+vi.mock('../../src/commands/storefront-build.js', () => ({
+  createStorefrontBuildCommand: vi.fn(() => mockStorefrontBuildCmd),
+}));
+vi.mock('../../src/commands/storefront-dev.js', () => ({
+  createStorefrontDevCommand: vi.fn(() => mockStorefrontDevCmd),
+}));
+vi.mock('../../src/commands/storefront-create.js', () => ({
+  createStorefrontCreateCommand: vi.fn(() => mockStorefrontCreateCmd),
+}));
 
 // Mock Commander's Command class
 vi.mock('commander', () => ({
@@ -85,6 +116,9 @@ vi.mock('../../src/core/command-groups.js', () => ({
   COMMAND_GROUPS: {
     theme: {
       description: 'Theme development and deployment commands',
+    },
+    storefront: {
+      description: 'Storefront development commands',
     },
   },
 }));
@@ -122,10 +156,15 @@ describe('CommandRegistry', () => {
       'deploy',
       'delete',
       'watch',
+      'storefront-build',
+      'storefront-dev',
+      'storefront-create',
     ]);
     expect(registry.commandInstances.configure).toBe(mockConfigureCmd);
     expect(registry.commandInstances['sign-in']).toBe(mockSignInCmd);
-    // ... check other commands similarly
+    expect(registry.commandInstances['storefront-build']).toBe(mockStorefrontBuildCmd);
+    expect(registry.commandInstances['storefront-dev']).toBe(mockStorefrontDevCmd);
+    expect(registry.commandInstances['storefront-create']).toBe(mockStorefrontCreateCmd);
     expect(registry.commandActions).toEqual({});
     expect(registry.groupCommands).toEqual({});
   });
@@ -134,8 +173,9 @@ describe('CommandRegistry', () => {
     registry = new CommandRegistry(mockApp);
     expect(registry.app).toBe(mockApp);
     // Initialization logic remains the same regarding commands
-    expect(registry.commands.length).toBe(6);
+    expect(registry.commands.length).toBe(9);
     expect(registry.commandInstances.configure).toBe(mockConfigureCmd);
+    expect(registry.commandInstances['storefront-build']).toBe(mockStorefrontBuildCmd);
   });
 
   describe('registerCommands', () => {
@@ -153,12 +193,13 @@ describe('CommandRegistry', () => {
       );
     });
 
-    it('should create theme group command and add it to program', () => {
+    it('should create theme and storefront group commands and add them to program', () => {
       registry.registerCommands(mockProgram);
 
-      // Theme group command should be added to the program
-      expect(mockProgram.addCommand).toHaveBeenCalledTimes(1);
+      // Theme and storefront group commands should be added to the program
+      expect(mockProgram.addCommand).toHaveBeenCalledTimes(2);
       expect(registry.groupCommands.theme).toBeDefined();
+      expect(registry.groupCommands.storefront).toBeDefined();
     });
 
     it('should register theme commands as subcommands under theme group', () => {
@@ -168,11 +209,18 @@ describe('CommandRegistry', () => {
       const themeGroupCmd = registry.groupCommands.theme;
       expect(themeGroupCmd).toBeDefined();
 
+      // Verify storefront group was created
+      const storefrontGroupCmd = registry.groupCommands.storefront;
+      expect(storefrontGroupCmd).toBeDefined();
+
       // The action handlers should be set up for all commands
-      expect(Object.keys(registry.commandActions).length).toBe(6);
+      expect(Object.keys(registry.commandActions).length).toBe(9);
       expect(registry.commandActions.configure).toBeDefined();
       expect(registry.commandActions.download).toBeDefined();
       expect(registry.commandActions['sign-in']).toBeDefined();
+      expect(registry.commandActions['storefront-build']).toBeDefined();
+      expect(registry.commandActions['storefront-dev']).toBeDefined();
+      expect(registry.commandActions['storefront-create']).toBeDefined();
     });
 
     it('should set up action handlers that call execute', () => {
@@ -222,7 +270,9 @@ describe('CommandRegistry', () => {
       expect(mockConfigureCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockSignInCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockDownloadCmd.setApp).toHaveBeenCalledWith(mockApp);
-      // ... check other commands
+      expect(mockStorefrontBuildCmd.setApp).toHaveBeenCalledWith(mockApp);
+      expect(mockStorefrontDevCmd.setApp).toHaveBeenCalledWith(mockApp);
+      expect(mockStorefrontCreateCmd.setApp).toHaveBeenCalledWith(mockApp);
     });
 
     it('should throw an error if trying to set a null app', () => {
