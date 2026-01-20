@@ -11,16 +11,23 @@ import { BaseCommand } from './base.js';
 import { runBuild } from './storefront-build.js';
 
 /**
- * Check if a port is available
+ * Check if a port is available on a specific host
  * @param {number} port - Port to check
- * @returns {Promise<boolean>} Whether the port is available
+ * @param {string} host - Host to check
+ * @returns {Promise<boolean|null>} Whether the port is available, or null if check failed (e.g., IPv6 not supported)
  */
-function isPortAvailable(port) {
+function checkPortOnHost(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer();
 
-    server.once('error', () => {
-      resolve(false);
+    server.once('error', (err) => {
+      // EADDRINUSE means port is in use
+      if (err.code === 'EADDRINUSE') {
+        resolve(false);
+      } else {
+        // Other errors (e.g., EAFNOSUPPORT for IPv6) mean check failed
+        resolve(null);
+      }
     });
 
     server.once('listening', () => {
@@ -28,8 +35,35 @@ function isPortAvailable(port) {
       resolve(true);
     });
 
-    server.listen(port, '127.0.0.1');
+    server.listen(port, host);
   });
+}
+
+/**
+ * Check if a port is available on all interfaces
+ * Next.js binds to '::' (IPv6 all interfaces) by default, so we need to check both
+ * @param {number} port - Port to check
+ * @returns {Promise<boolean>} Whether the port is available
+ */
+async function isPortAvailable(port) {
+  // Check IPv6 all interfaces (what Next.js uses by default)
+  const ipv6Available = await checkPortOnHost(port, '::');
+  // If IPv6 check succeeded and port is in use, return false
+  if (ipv6Available === false) return false;
+
+  // Check IPv4 all interfaces
+  const ipv4Available = await checkPortOnHost(port, '0.0.0.0');
+  // If IPv4 check succeeded and port is in use, return false
+  if (ipv4Available === false) return false;
+
+  // Port is available if at least one check succeeded and showed available
+  // If both checks failed (null), fall back to localhost check
+  if (ipv6Available === null && ipv4Available === null) {
+    const localhostAvailable = await checkPortOnHost(port, '127.0.0.1');
+    return localhostAvailable !== false;
+  }
+
+  return true;
 }
 
 /**
