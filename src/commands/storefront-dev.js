@@ -87,12 +87,13 @@ export async function findAvailablePort(startPort, maxAttempts = 100) {
 /**
  * Start Next.js dev server as child process
  * @param {string} port - Port for Next.js dev server
+ * @param {Function} onExit - Callback when process exits
  * @returns {import('node:child_process').ChildProcess} Child process
  */
-function startNextDev(port) {
-  const nextProcess = spawn('npx', ['next', 'dev', '-p', port], {
+function startNextDev(port, onExit) {
+  const nextProcess = spawn('npx', ['next', 'dev', '-p', port.toString()], {
     stdio: 'inherit',
-    shell: true,
+    // No shell: true - direct process spawning for proper signal handling
   });
 
   nextProcess.on('error', (error) => {
@@ -101,9 +102,8 @@ function startNextDev(port) {
   });
 
   nextProcess.on('exit', (code) => {
-    if (code !== null && code !== 0) {
-      console.error(pc.red('✗'), `Next.js exited with code ${code}`);
-      process.exit(code);
+    if (onExit) {
+      onExit(code);
     }
   });
 
@@ -139,9 +139,8 @@ export async function runDev(options) {
     );
   }
 
-  // Start Next.js dev server
-  console.log(pc.cyan('→'), `Starting Next.js dev server on port ${pc.bold(availablePort)}...\n`);
-  const nextProcess = startNextDev(availablePort);
+  // Track cleanup state
+  let isCleaningUp = false;
 
   // Watch for component changes
   console.log(pc.cyan('→'), 'Watching for component changes...\n');
@@ -152,6 +151,32 @@ export async function runDev(options) {
       stabilityThreshold: 100,
       pollInterval: 50,
     },
+  });
+
+  // Handle cleanup - wait for child process to exit before exiting parent
+  const cleanup = () => {
+    if (isCleaningUp) return;
+    isCleaningUp = true;
+
+    console.log(pc.dim('\nShutting down...'));
+    watcher.close();
+
+    if (nextProcess && !nextProcess.killed) {
+      nextProcess.kill('SIGTERM');
+    }
+    // Don't call process.exit() here - wait for onExit callback
+  };
+
+  // Start Next.js dev server
+  console.log(pc.cyan('→'), `Starting Next.js dev server on port ${pc.bold(availablePort)}...\n`);
+  const nextProcess = startNextDev(availablePort, (code) => {
+    // Child process has exited, now we can safely exit
+    if (isCleaningUp) {
+      process.exit(0);
+    } else if (code !== null && code !== 0) {
+      console.error(pc.red('✗'), `Next.js exited with code ${code}`);
+      process.exit(code);
+    }
   });
 
   let isRebuilding = false;
@@ -176,14 +201,6 @@ export async function runDev(options) {
   watcher.on('add', (filePath) => rebuild('added', filePath));
   watcher.on('change', (filePath) => rebuild('changed', filePath));
   watcher.on('unlink', (filePath) => rebuild('removed', filePath));
-
-  // Handle cleanup
-  const cleanup = () => {
-    console.log(pc.dim('\nShutting down...'));
-    watcher.close();
-    nextProcess.kill('SIGTERM');
-    process.exit(0);
-  };
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
