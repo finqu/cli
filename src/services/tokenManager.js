@@ -289,6 +289,7 @@ export class TokenManager {
         scopes: this.configManager.get('scopes', [
           'themes_read',
           'themes_write',
+          'sales_channel_read',
         ]),
       };
 

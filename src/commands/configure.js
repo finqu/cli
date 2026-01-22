@@ -101,7 +101,9 @@ export class ConfigureCommand extends BaseCommand {
       let selectedVersion = null;
 
       // Step 1: Select a store
-      const stores = await this.app.services.themeApi.listStores();
+      // Get merchantId from config - set during sign-in from profile service
+      const merchantId = this.config.get('merchant');
+      const stores = await this.app.services.themeApi.listStores(merchantId);
 
       if (!stores || !stores.length) {
         throw AppError.configError('No stores found');
@@ -114,7 +116,7 @@ export class ConfigureCommand extends BaseCommand {
             name: 'store',
             message: 'Which store would you like to setup?',
             choices: stores.map((store) => ({
-              title: `${store.merchant_name}/${store.name}`,
+              title: `${store.name}`,
               value: store,
             })),
           },
@@ -134,7 +136,10 @@ export class ConfigureCommand extends BaseCommand {
       }
 
       // Step 2: Select a theme for this store
-      const themes = await this.app.services.themeApi.listThemes(selectedStore);
+      const themes = await this.app.services.themeApi.listThemes(
+        merchantId,
+        selectedStore,
+      );
 
       if (!themes || !themes.length) {
         throw AppError.configError('No themes found for selected store');
@@ -168,6 +173,7 @@ export class ConfigureCommand extends BaseCommand {
 
       // Step 3: Select a version for this theme
       const versions = await this.app.services.themeApi.listVersions(
+        merchantId,
         selectedStore,
         selectedTheme,
       );
@@ -206,7 +212,7 @@ export class ConfigureCommand extends BaseCommand {
       this.config.set(
         'store',
         {
-          merchantId: selectedStore.merchant_id,
+          merchantId: merchantId,
           id: selectedStore.id,
           themeId: selectedTheme,
           versionId: selectedVersion,

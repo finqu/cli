@@ -23,8 +23,8 @@ export function createMockApp(options = {}) {
     options.config instanceof Function
       ? options.config
       : typeof options.config === 'object' && options.config !== null
-      ? createMockConfig(options.config)
-      : createMockConfig();
+        ? createMockConfig(options.config)
+        : createMockConfig();
   const themeApi = options.themeApi || createMockThemeApi();
 
   // Create and return the mock app
@@ -118,14 +118,12 @@ export function createTestData(type) {
       return [
         {
           id: 'store-123',
-          merchant_id: 'merchant-123',
           merchant_name: 'Test Merchant',
           name: 'Test Store',
           technical_domain: 'test-store.com',
         },
         {
           id: 'store-456',
-          merchant_id: 'merchant-456',
           merchant_name: 'Another Merchant',
           name: 'Another Store',
           technical_domain: 'another-store.com',
