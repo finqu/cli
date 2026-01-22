@@ -191,7 +191,6 @@ describe('ConfigureCommand', () => {
   describe('configureForStore()', () => {
     const mockStore = {
       id: 'store-123',
-      merchant_id: 'merchant-123',
       merchant_name: 'Test Merchant',
       name: 'Test Store',
       technical_domain: 'test-store.com',
@@ -215,17 +214,37 @@ describe('ConfigureCommand', () => {
     });
 
     it('should guide through the store configuration process', async () => {
+      mockConfig.get.mockImplementation((key) => {
+        if (key === 'merchant') return 'merchant-123';
+        return undefined;
+      });
+
       await command.configureForStore({});
 
       expect(mockThemeApi.listStores).toHaveBeenCalledTimes(1);
+      expect(mockThemeApi.listStores).toHaveBeenCalledWith('merchant-123');
       expect(mockThemeApi.listThemes).toHaveBeenCalledTimes(1);
+      expect(mockThemeApi.listThemes).toHaveBeenCalledWith(
+        'merchant-123',
+        mockStore,
+      );
       expect(mockThemeApi.listVersions).toHaveBeenCalledTimes(1);
+      expect(mockThemeApi.listVersions).toHaveBeenCalledWith(
+        'merchant-123',
+        mockStore,
+        'theme-123',
+      );
 
       // Verify prompts were called 3 times
       expect(prompts).toHaveBeenCalledTimes(3);
     });
 
     it('should set store config', async () => {
+      mockConfig.get.mockImplementation((key) => {
+        if (key === 'merchant') return 'merchant-123';
+        return undefined;
+      });
+
       await command.configureForStore({});
 
       expect(mockConfig.set).toHaveBeenCalledWith(
