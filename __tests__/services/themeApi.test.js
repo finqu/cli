@@ -96,7 +96,7 @@ const handlers = [
     () => HttpResponse.json([{ id: 'store-theme-1', name: 'Store Theme 1' }]),
   ),
   // List Stores
-  http.get('http://api.test.com/1.2/developer/stores', () =>
+  http.get('http://api.test.com/1.2/merchants/:merchantId/channels', () =>
     HttpResponse.json([{ id: 'store-1', name: 'Store 1' }]),
   ),
   // List Versions
@@ -331,15 +331,15 @@ describe('src/services/themeApi.js', () => {
   describe('listThemes()', () => {
     it('should throw error if store is not provided', async () => {
       setupThemeApi();
-      await expect(themeApi.listThemes(null)).rejects.toThrow(
+      await expect(themeApi.listThemes('merchant-123', null)).rejects.toThrow(
         'Store is required to list themes',
       );
     });
 
     it('should list store themes if store is provided', async () => {
       setupThemeApi();
-      const store = { merchant_id: 'merchant-123', id: 'channel-456' };
-      const themes = await themeApi.listThemes(store);
+      const store = { id: 'channel-456' };
+      const themes = await themeApi.listThemes('merchant-123', store);
       expect(themes).toEqual([{ id: 'store-theme-1', name: 'Store Theme 1' }]);
       expect(mockLogger.printVerbose).toHaveBeenCalledWith(
         expect.stringContaining('Fetching store themes'),
@@ -354,8 +354,10 @@ describe('src/services/themeApi.js', () => {
         ),
       );
       setupThemeApi();
-      const store = { merchant_id: 'merchant-123', id: 'channel-456' };
-      await expect(themeApi.listThemes(store)).rejects.toMatchObject({
+      const store = { id: 'channel-456' };
+      await expect(
+        themeApi.listThemes('merchant-123', store),
+      ).rejects.toMatchObject({
         status: 500,
       });
       expect(mockLogger.printError).toHaveBeenCalledWith(
@@ -368,7 +370,7 @@ describe('src/services/themeApi.js', () => {
   describe('listStores()', () => {
     it('should list stores successfully', async () => {
       setupThemeApi();
-      const stores = await themeApi.listStores();
+      const stores = await themeApi.listStores('merchant-123');
       expect(stores).toEqual([{ id: 'store-1', name: 'Store 1' }]);
       expect(mockLogger.printVerbose).toHaveBeenCalledWith(
         expect.stringContaining('Fetching accessible stores'),
@@ -377,12 +379,13 @@ describe('src/services/themeApi.js', () => {
 
     it('should handle errors during listStores', async () => {
       server.use(
-        http.get('http://api.test.com/1.2/developer/stores', () =>
-          HttpResponse.json({ error: 'Server Error' }, { status: 500 }),
+        http.get(
+          'http://api.test.com/1.2/merchants/merchant-123/channels',
+          () => HttpResponse.json({ error: 'Server Error' }, { status: 500 }),
         ),
       );
       setupThemeApi();
-      await expect(themeApi.listStores()).rejects.toMatchObject({
+      await expect(themeApi.listStores('merchant-123')).rejects.toMatchObject({
         status: 500,
       });
       expect(mockLogger.printError).toHaveBeenCalledWith(
@@ -395,8 +398,12 @@ describe('src/services/themeApi.js', () => {
   describe('listVersions()', () => {
     it('should list versions for a store theme successfully', async () => {
       setupThemeApi();
-      const store = { merchant_id: 'merchant-123', id: 'channel-456' };
-      const versions = await themeApi.listVersions(store, 'theme-789');
+      const store = { id: 'channel-456' };
+      const versions = await themeApi.listVersions(
+        'merchant-123',
+        store,
+        'theme-789',
+      );
       expect(versions).toEqual([{ id: 'v1', name: 'Version 1' }]);
       expect(mockLogger.printVerbose).toHaveBeenCalledWith(
         expect.stringContaining('Fetching theme versions'),
@@ -415,9 +422,9 @@ describe('src/services/themeApi.js', () => {
         ),
       );
       setupThemeApi();
-      const store = { merchant_id: 'merchant-123', id: 'channel-456' };
+      const store = { id: 'channel-456' };
       await expect(
-        themeApi.listVersions(store, 'theme-789'),
+        themeApi.listVersions('merchant-123', store, 'theme-789'),
       ).rejects.toMatchObject({ status: 500 });
       expect(mockLogger.printError).toHaveBeenCalledWith(
         'Failed to list theme versions',

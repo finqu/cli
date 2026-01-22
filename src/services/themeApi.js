@@ -85,17 +85,16 @@ export class ThemeApi {
 
   /**
    * Lists themes for a specific store
+   * @param {string} merchantId Merchant ID
    * @param {Object} store Store object
    * @returns {Promise<Array>} List of themes
    */
-  async listThemes(store) {
+  async listThemes(merchantId, store) {
     if (!store) {
       throw new Error('Store is required to list themes');
     }
 
-    const endpoint = `${this.getApiBase()}/merchants/${
-      store.merchant_id
-    }/channels/${store.id}/themes`;
+    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels/${store.id}/themes`;
     this.logger.printVerbose(`Fetching store themes from ${endpoint}`);
 
     try {
@@ -108,14 +107,13 @@ export class ThemeApi {
 
   /**
    * Lists available versions for a specific theme within a store
+   * @param {string} merchantId Merchant ID
    * @param {Object} store Store object
    * @param {string} themeId Theme ID
    * @returns {Promise<Array>} List of theme versions
    */
-  async listVersions(store, themeId) {
-    const endpoint = `${this.getApiBase()}/merchants/${
-      store.merchant_id
-    }/channels/${store.id}/themes/${themeId}/versions`;
+  async listVersions(merchantId, store, themeId) {
+    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels/${store.id}/themes/${themeId}/versions`;
     this.logger.printVerbose(`Fetching theme versions from ${endpoint}`);
 
     try {
@@ -128,10 +126,11 @@ export class ThemeApi {
 
   /**
    * Lists stores accessible by the developer
+   * @param {string} merchantId Merchant ID
    * @returns {Promise<Array>} List of stores
    */
-  async listStores() {
-    const endpoint = `${this.getApiBase()}/developer/stores`;
+  async listStores(merchantId) {
+    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels`;
     this.logger.printVerbose(`Fetching accessible stores from ${endpoint}`);
 
     try {
