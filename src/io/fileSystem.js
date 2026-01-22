@@ -169,7 +169,7 @@ export class FileSystem {
     const dirents = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(
       dirents.map(async (dirent) => {
-        const res = require('path').resolve(dir, dirent.name);
+        const res = path.resolve(dir, dirent.name);
         if (dirent.isDirectory()) {
           return this.getFiles(res);
         } else {
