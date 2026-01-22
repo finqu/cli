@@ -1,11 +1,20 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { builtinModules } from 'module';
+import { readFileSync } from 'fs';
+
+// Read package.json to get version
+const pkg = JSON.parse(
+  readFileSync(resolve(__dirname, 'package.json'), 'utf-8'),
+);
 
 // Create a list of Node.js built-in modules to exclude from bundling
 const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   build: {
     // Build for Node.js
     target: 'node18',
