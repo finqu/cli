@@ -29,7 +29,7 @@ async function main() {
     program
       .name('finqu')
       .description('Finqu CLI')
-      .version(process.env.npm_package_version || '1.0.0')
+      .version(__APP_VERSION__)
       .option('-v, --verbose', 'Enable verbose logging', false) // Default to false
       .option('-e, --env <environment>', 'Environment to use', 'production') // Default to 'production'
       .option(
