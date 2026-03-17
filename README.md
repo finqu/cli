@@ -1,6 +1,6 @@
 # Finqu CLI
 
-Finqu CLI is a command-line tool for working with the Finqu unified commerce platform. It provides workflows for theme development (configure, download, deploy, watch) and headless storefront development (create, build, dev) with Puck editor integration.
+Finqu CLI is a command-line tool for working with the Finqu unified commerce platform. It provides workflows for theme development (configure, download, deploy, dev) and headless storefront development (create, build, dev) with Puck editor integration.
 
 ## Installation
 
@@ -36,7 +36,27 @@ finqu theme configure
 
 You'll be prompted to select a theme to work with.
 
-### 3. Create a Storefront (Optional)
+### 3. Install the Local Theme Development Tool
+
+The local theme development server is provided by the separate `finqu-theme-dev` binary.
+
+Install instructions are available here:
+
+https://developers.finqu.com/apis-and-tools/theme-development-kit/install
+
+### 4. Start Local Theme Development
+
+Start the local theme development server:
+
+```bash
+finqu theme dev
+```
+
+On first run, the CLI checks whether `finqu-theme-dev` has already been authenticated. If not, it automatically runs `finqu-theme-dev auth` and lets that tool guide you through entering your store URL and channel API key.
+
+After authentication, the local server is started with real store data and hot reload.
+
+### 5. Create a Storefront (Optional)
 
 Create a new headless storefront project:
 
@@ -140,6 +160,28 @@ finqu theme delete [sources...]
 | `--no-compile` | Skip asset compilation on the server after deletion |
 | `[sources...]` | File paths of assets to delete                      |
 
+#### dev
+
+Start local theme development using the `finqu-theme-dev` binary:
+
+```bash
+finqu theme dev
+```
+
+| Option                | Description          | Default |
+| --------------------- | -------------------- | ------- |
+| `-p, --port <number>` | Port to listen on    | `3000`  |
+| `-d, --dir <path>`    | Theme directory path |         |
+
+This command provides the recommended local theme development workflow:
+
+1. Checks that `finqu-theme-dev` is installed and available on your `PATH`
+2. Checks whether `finqu-theme-dev` authentication has already been completed
+3. Automatically starts `finqu-theme-dev auth` if credentials are missing
+4. Starts the local theme development server with `finqu-theme-dev serve`
+
+The `finqu-theme-dev` tool uses its own credentials file at `~/.finqu-theme-dev/credentials.json` and requires a channel API key. This is separate from the OAuth access token used by `finqu sign-in`.
+
 #### watch
 
 Automatically deploy changes to assets as you work:
@@ -154,6 +196,8 @@ finqu theme watch
 
 This command monitors your local theme directory for changes and automatically uploads modified files to your connected theme.
 
+> **Deprecated:** `finqu theme watch` is deprecated and will be removed in a future release. Use `finqu theme dev` for local theme rendering and a better development workflow.
+
 ### Storefront Commands
 
 All storefront-related commands are grouped under `finqu storefront`:
@@ -166,12 +210,12 @@ Create a new Finqu storefront project with a modern headless architecture:
 finqu storefront create [project-name]
 ```
 
-| Option                  | Description                                     |
-| ----------------------- | ----------------------------------------------- |
-| `[project-name]`        | Optional name for your project                  |
-| `-t, --template <url>`  | Git repository URL to use as template           |
-| `-b, --branch <branch>` | Branch to clone (default: main)                 |
-| `--embedded`            | Use embedded templates instead of git clone     |
+| Option                  | Description                                 |
+| ----------------------- | ------------------------------------------- |
+| `[project-name]`        | Optional name for your project              |
+| `-t, --template <url>`  | Git repository URL to use as template       |
+| `-b, --branch <branch>` | Branch to clone (default: main)             |
+| `--embedded`            | Use embedded templates instead of git clone |
 
 If no project name is provided, you'll be prompted to enter one. The command will create a new directory with all necessary files and configurations based on the template repository.
 
@@ -183,10 +227,10 @@ Build Puck configuration files from your component files:
 finqu storefront build
 ```
 
-| Option                  | Description                                       | Default       |
-| ----------------------- | ------------------------------------------------- | ------------- |
-| `-c, --components <path>` | Path to components directory                    | `components`  |
-| `-o, --output <path>`     | Output directory for generated config           | `.storefront` |
+| Option                    | Description                           | Default       |
+| ------------------------- | ------------------------------------- | ------------- |
+| `-c, --components <path>` | Path to components directory          | `components`  |
+| `-o, --output <path>`     | Output directory for generated config | `.storefront` |
 
 This command scans your components directory for `*.puck.tsx` files and generates two Puck configuration files:
 
@@ -213,11 +257,11 @@ Start the development server with automatic rebuilding:
 finqu storefront dev
 ```
 
-| Option                    | Description                                     | Default       |
-| ------------------------- | ----------------------------------------------- | ------------- |
-| `-c, --components <path>` | Path to components directory                    | `components`  |
-| `-o, --output <path>`     | Output directory for generated config           | `.storefront` |
-| `-p, --port <number>`     | Port for Next.js dev server                     | `3000`        |
+| Option                    | Description                           | Default       |
+| ------------------------- | ------------------------------------- | ------------- |
+| `-c, --components <path>` | Path to components directory          | `components`  |
+| `-o, --output <path>`     | Output directory for generated config | `.storefront` |
+| `-p, --port <number>`     | Port for Next.js dev server           | `3000`        |
 
 This command provides a complete development experience:
 
@@ -290,12 +334,14 @@ Finqu CLI uses a JSON configuration file (default: `finqu.config.json`) to store
 2. Authenticate: `finqu sign-in`
 3. Configure your theme: `finqu theme configure`
 4. Download theme assets: `finqu theme download`
+5. Install `finqu-theme-dev`: https://developers.finqu.com/apis-and-tools/theme-development-kit/install
+6. Start local development: `finqu theme dev`
 
 ### Theme Development Cycle
 
 1. Make changes to theme files
-2. Deploy changes: `finqu theme deploy`
-3. Or use the watcher: `finqu theme watch`
+2. Preview changes locally with `finqu theme dev`
+3. Deploy changes when ready with `finqu theme deploy`
 
 ### Storefront Development Setup
 
@@ -315,6 +361,8 @@ Finqu CLI uses a JSON configuration file (default: `finqu.config.json`) to store
 ## Troubleshooting
 
 - **Authentication Errors**: Use `finqu sign-in` to refresh your authentication
+- **Theme Dev Authentication Errors**: Run `finqu theme dev` again to trigger `finqu-theme-dev auth`, or run `finqu-theme-dev auth` directly
+- **Theme Dev Binary Not Found**: Install `finqu-theme-dev` using the instructions at https://developers.finqu.com/apis-and-tools/theme-development-kit/install
 - **Permission Errors**: Ensure you have the right access permissions to the theme
 - **API Errors**: Use the `-v` flag to get verbose output for debugging
 

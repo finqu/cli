@@ -12,6 +12,7 @@ import { createWatchCommand } from './watch.js';
 import { createStorefrontBuildCommand } from './storefront-build.js';
 import { createStorefrontDevCommand } from './storefront-dev.js';
 import { createStorefrontCreateCommand } from './storefront-create.js';
+import { createThemeDevCommand } from './theme-dev.js';
 import { COMMAND_GROUPS } from '../core/command-groups.js';
 
 /**
@@ -44,6 +45,7 @@ export class CommandRegistry {
       deploy: createDeployCommand(this.app),
       delete: createDeleteCommand(this.app),
       watch: createWatchCommand(this.app),
+      'theme-dev': createThemeDevCommand(this.app),
       'storefront-build': createStorefrontBuildCommand(this.app),
       'storefront-dev': createStorefrontDevCommand(this.app),
       'storefront-create': createStorefrontCreateCommand(this.app),

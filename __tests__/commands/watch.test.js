@@ -114,6 +114,14 @@ describe('WatchCommand', () => {
   });
 
   describe('execute()', () => {
+    it('should print deprecation warning', async () => {
+      await command.execute({});
+
+      expect(mockLogger.printInfo).toHaveBeenCalledWith(
+        expect.stringContaining('deprecated'),
+      );
+    });
+
     it('should get theme directory from config', async () => {
       await command.execute({});
 
