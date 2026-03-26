@@ -7,7 +7,12 @@
  *   npm run release patch    # 1.0.0 -> 1.0.1
  *   npm run release minor    # 1.0.0 -> 1.1.0
  *   npm run release major    # 1.0.0 -> 2.0.0
+ *   npm run release alpha    # 1.0.0 -> 1.0.1-alpha.1 or 1.0.1-alpha.1 -> 1.0.1-alpha.2
+ *   npm run release beta     # 1.0.0 -> 1.0.1-beta.1 or 1.0.1-alpha.1 -> 1.0.1-beta.1
+ *   npm run release rc       # 1.0.0 -> 1.0.1-rc.1
+ *   npm run release stable   # 1.0.1-alpha.1 -> 1.0.1 (promote to stable)
  *   npm run release 1.2.3    # Set specific version
+ *   npm run release 1.2.3-alpha.1  # Set specific prerelease version
  */
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
@@ -33,10 +38,10 @@ function exec(command, options = {}) {
 }
 
 /**
- * Parse semantic version string
+ * Parse semantic version string (supports prereleases)
  */
 function parseVersion(version) {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/);
   if (!match) {
     throw new Error(`Invalid version format: ${version}`);
   }
@@ -44,6 +49,8 @@ function parseVersion(version) {
     major: parseInt(match[1], 10),
     minor: parseInt(match[2], 10),
     patch: parseInt(match[3], 10),
+    prerelease: match[4] || null,
+    prereleaseNum: match[5] ? parseInt(match[5], 10) : null,
   };
 }
 
@@ -51,7 +58,8 @@ function parseVersion(version) {
  * Bump version based on type
  */
 function bumpVersion(currentVersion, type) {
-  const { major, minor, patch } = parseVersion(currentVersion);
+  const parsed = parseVersion(currentVersion);
+  const { major, minor, patch, prerelease, prereleaseNum } = parsed;
 
   switch (type) {
     case 'major':
@@ -59,7 +67,33 @@ function bumpVersion(currentVersion, type) {
     case 'minor':
       return `${major}.${minor + 1}.0`;
     case 'patch':
+      // If currently a prerelease, just remove the prerelease suffix
+      if (prerelease) {
+        return `${major}.${minor}.${patch}`;
+      }
       return `${major}.${minor}.${patch + 1}`;
+    case 'alpha':
+    case 'beta':
+    case 'rc':
+      // If same prerelease type, increment the number
+      if (prerelease === type) {
+        return `${major}.${minor}.${patch}-${type}.${prereleaseNum + 1}`;
+      }
+      // If different prerelease type or stable, start at .1
+      // For stable -> prerelease, bump patch first
+      if (!prerelease) {
+        return `${major}.${minor}.${patch + 1}-${type}.1`;
+      }
+      // Switching prerelease type (e.g., alpha -> beta)
+      return `${major}.${minor}.${patch}-${type}.1`;
+    case 'stable':
+      // Promote prerelease to stable
+      if (!prerelease) {
+        throw new Error(
+          'Already a stable version. Use patch, minor, or major.',
+        );
+      }
+      return `${major}.${minor}.${patch}`;
     default:
       // Assume it's a specific version
       parseVersion(type); // Validate format
@@ -74,13 +108,22 @@ async function release() {
   const versionArg = process.argv[2];
 
   if (!versionArg) {
-    console.error('Usage: npm run release <patch|minor|major|x.y.z>');
+    console.error(
+      'Usage: npm run release <patch|minor|major|alpha|beta|rc|stable|x.y.z>',
+    );
     console.error('');
     console.error('Examples:');
     console.error('  npm run release patch    # 1.0.0 -> 1.0.1');
     console.error('  npm run release minor    # 1.0.0 -> 1.1.0');
     console.error('  npm run release major    # 1.0.0 -> 2.0.0');
+    console.error('  npm run release alpha    # 1.0.0 -> 1.0.1-alpha.1');
+    console.error(
+      '  npm run release alpha    # 1.0.1-alpha.1 -> 1.0.1-alpha.2',
+    );
+    console.error('  npm run release beta     # 1.0.1-alpha.2 -> 1.0.1-beta.1');
+    console.error('  npm run release stable   # 1.0.1-beta.1 -> 1.0.1');
     console.error('  npm run release 1.2.3    # Set specific version');
+    console.error('  npm run release 1.2.3-alpha.1  # Set specific prerelease');
     process.exit(1);
   }
 

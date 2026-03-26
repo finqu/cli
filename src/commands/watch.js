@@ -53,6 +53,10 @@ export class WatchCommand extends BaseCommand {
    * @returns {Promise<Object>} Command result
    */
   async execute(options) {
+    this.logger.printInfo(
+      '⚠ The "watch" command is deprecated and will be removed in a future release. Use "finqu theme dev" instead for local theme development.',
+    );
+
     try {
       const themeDir = this.config.get('themeDir');
       // Instantiate the watcher with dependencies

@@ -27,6 +27,10 @@ export {
 // Command exports
 export { BaseCommand } from './commands/base.js';
 export {
+  ThemeDevCommand,
+  createThemeDevCommand,
+} from './commands/theme-dev.js';
+export {
   ConfigureCommand,
   createConfigureCommand,
 } from './commands/configure.js';
