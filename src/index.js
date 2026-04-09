@@ -1,5 +1,5 @@
 /**
- * Finqu Theme Kit
+ * Finqu CLI
  * Main entry point for the refactored codebase
  */
 
@@ -23,6 +23,10 @@ export {
   ProfileService,
   createProfileService,
 } from './services/profileService.js';
+export {
+  AppWebhookListener,
+  createAppWebhookListener,
+} from './services/app-webhook-listener.js';
 
 // Command exports
 export { BaseCommand } from './commands/base.js';

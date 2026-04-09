@@ -1,5 +1,5 @@
 /**
- * Profile Service for Finqu Theme Kit
+ * Profile Service for Finqu CLI
  * Handles user profile and merchant information
  */
 

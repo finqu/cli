@@ -12,7 +12,7 @@ import { createFileSystem } from './io/fileSystem.js';
 
 // Configuration constants
 const DEFAULT_CONFIG_FILE =
-  process.env.FINQU_CONFIG || path.join(process.cwd(), 'finqu.config.json');
+  process.env.FINQU_CONFIG || path.join(process.cwd(), '.env');
 
 /**
  * Main CLI entry point function
@@ -31,7 +31,6 @@ async function main() {
       .description('Finqu CLI')
       .version(__APP_VERSION__)
       .option('-v, --verbose', 'Enable verbose logging', false) // Default to false
-      .option('-e, --env <environment>', 'Environment to use', 'production') // Default to 'production'
       .option(
         '-c, --config <path>',
         'Path to config file',
@@ -46,12 +45,7 @@ async function main() {
     // 3. Initialize ConfigManager
     const fileSystem = createFileSystem(); // Needed for config manager
     const initialConfigData = {
-      // Pass CLI options as initial data
-      // ConfigManager will merge this with file data, prioritizing initial data
-      [options.env]: {
-        // Assuming 'production' is the default env, adjust if needed
-        verbose: options.verbose,
-      },
+      verbose: options.verbose,
     };
     const configManager = await createConfigManager(
       fileSystem,

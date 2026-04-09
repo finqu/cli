@@ -1,7 +1,7 @@
 import path from 'path';
 import mime from 'mime-types';
 /**
- * Theme API service for Finqu Theme Kit
+ * Theme API service for Finqu CLI
  * Handles all theme-related API operations
  */
 

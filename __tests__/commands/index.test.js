@@ -57,6 +57,102 @@ const mockThemeDevCmd = {
   execute: vi.fn(),
   setApp: vi.fn(),
 };
+const mockAppListenCmd = {
+  name: 'listen',
+  syntax: 'listen',
+  description: 'Listen app webhooks',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppLinkCmd = {
+  name: 'link',
+  syntax: 'link <appId>',
+  description: 'Link this project to an existing app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppListCmd = {
+  name: 'list',
+  syntax: 'list',
+  description: 'List all your apps',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppInfoCmd = {
+  name: 'info',
+  syntax: 'info',
+  description: 'Show app details',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppCreateCmd = {
+  name: 'create',
+  syntax: 'create <name>',
+  description: 'Create a new app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppUpdateCmd = {
+  name: 'update',
+  syntax: 'update',
+  description: 'Update app configuration or listing',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppDeleteCmd = {
+  name: 'delete',
+  syntax: 'delete',
+  description: 'Delete an app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppShareCmd = {
+  name: 'share',
+  syntax: 'share',
+  description: 'Get or create a share link for the app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppPublishCmd = {
+  name: 'publish',
+  syntax: 'publish',
+  description: 'Publish the app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppUnpublishCmd = {
+  name: 'unpublish',
+  syntax: 'unpublish',
+  description: 'Unpublish the app',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppReleaseCmd = {
+  name: 'release',
+  syntax: 'release',
+  description: 'Release a new app version',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
+const mockAppRotateSecretCmd = {
+  name: 'rotate-secret',
+  syntax: 'rotate-secret',
+  description: 'Rotate the OAuth client secret',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
 const mockStorefrontBuildCmd = {
   name: 'build',
   description: 'Build Puck configuration',
@@ -101,6 +197,42 @@ vi.mock('../../src/commands/watch.js', () => ({
 vi.mock('../../src/commands/theme-dev.js', () => ({
   createThemeDevCommand: vi.fn(() => mockThemeDevCmd),
 }));
+vi.mock('../../src/commands/app-listen.js', () => ({
+  createAppListenCommand: vi.fn(() => mockAppListenCmd),
+}));
+vi.mock('../../src/commands/app-link.js', () => ({
+  createAppLinkCommand: vi.fn(() => mockAppLinkCmd),
+}));
+vi.mock('../../src/commands/app-list.js', () => ({
+  createAppListCommand: vi.fn(() => mockAppListCmd),
+}));
+vi.mock('../../src/commands/app-info.js', () => ({
+  createAppInfoCommand: vi.fn(() => mockAppInfoCmd),
+}));
+vi.mock('../../src/commands/app-create.js', () => ({
+  createAppCreateCommand: vi.fn(() => mockAppCreateCmd),
+}));
+vi.mock('../../src/commands/app-update.js', () => ({
+  createAppUpdateCommand: vi.fn(() => mockAppUpdateCmd),
+}));
+vi.mock('../../src/commands/app-delete.js', () => ({
+  createAppDeleteCommand: vi.fn(() => mockAppDeleteCmd),
+}));
+vi.mock('../../src/commands/app-share.js', () => ({
+  createAppShareCommand: vi.fn(() => mockAppShareCmd),
+}));
+vi.mock('../../src/commands/app-publish.js', () => ({
+  createAppPublishCommand: vi.fn(() => mockAppPublishCmd),
+}));
+vi.mock('../../src/commands/app-unpublish.js', () => ({
+  createAppUnpublishCommand: vi.fn(() => mockAppUnpublishCmd),
+}));
+vi.mock('../../src/commands/app-release.js', () => ({
+  createAppReleaseCommand: vi.fn(() => mockAppReleaseCmd),
+}));
+vi.mock('../../src/commands/app-rotate-secret.js', () => ({
+  createAppRotateSecretCommand: vi.fn(() => mockAppRotateSecretCmd),
+}));
 vi.mock('../../src/commands/storefront-build.js', () => ({
   createStorefrontBuildCommand: vi.fn(() => mockStorefrontBuildCmd),
 }));
@@ -124,6 +256,9 @@ vi.mock('commander', () => ({
 // Mock command-groups
 vi.mock('../../src/core/command-groups.js', () => ({
   COMMAND_GROUPS: {
+    app: {
+      description: 'App authentication and realtime webhook commands',
+    },
     theme: {
       description: 'Theme development and deployment commands',
     },
@@ -167,12 +302,26 @@ describe('CommandRegistry', () => {
       'delete',
       'watch',
       'theme-dev',
+      'app-listen',
+      'app-link',
+      'app-list',
+      'app-info',
+      'app-create',
+      'app-update',
+      'app-delete',
+      'app-share',
+      'app-publish',
+      'app-unpublish',
+      'app-release',
+      'app-rotate-secret',
+      'migrate',
       'storefront-build',
       'storefront-dev',
       'storefront-create',
     ]);
     expect(registry.commandInstances.configure).toBe(mockConfigureCmd);
     expect(registry.commandInstances['sign-in']).toBe(mockSignInCmd);
+    expect(registry.commandInstances['app-listen']).toBe(mockAppListenCmd);
     expect(registry.commandInstances['storefront-build']).toBe(
       mockStorefrontBuildCmd,
     );
@@ -190,11 +339,7 @@ describe('CommandRegistry', () => {
     registry = new CommandRegistry(mockApp);
     expect(registry.app).toBe(mockApp);
     // Initialization logic remains the same regarding commands
-    expect(registry.commands.length).toBe(10);
-    expect(registry.commandInstances.configure).toBe(mockConfigureCmd);
-    expect(registry.commandInstances['storefront-build']).toBe(
-      mockStorefrontBuildCmd,
-    );
+    expect(registry.commands.length).toBe(23);
   });
 
   describe('registerCommands', () => {
@@ -212,11 +357,12 @@ describe('CommandRegistry', () => {
       );
     });
 
-    it('should create theme and storefront group commands and add them to program', () => {
+    it('should create app, theme and storefront group commands and add them to program', () => {
       registry.registerCommands(mockProgram);
 
-      // Theme and storefront group commands should be added to the program
-      expect(mockProgram.addCommand).toHaveBeenCalledTimes(2);
+      // App, theme and storefront group commands should be added to the program
+      expect(mockProgram.addCommand).toHaveBeenCalledTimes(3);
+      expect(registry.groupCommands.app).toBeDefined();
       expect(registry.groupCommands.theme).toBeDefined();
       expect(registry.groupCommands.storefront).toBeDefined();
     });
@@ -225,6 +371,9 @@ describe('CommandRegistry', () => {
       registry.registerCommands(mockProgram);
 
       // Verify theme group was created and commands were registered
+      const appGroupCmd = registry.groupCommands.app;
+      expect(appGroupCmd).toBeDefined();
+
       const themeGroupCmd = registry.groupCommands.theme;
       expect(themeGroupCmd).toBeDefined();
 
@@ -233,10 +382,11 @@ describe('CommandRegistry', () => {
       expect(storefrontGroupCmd).toBeDefined();
 
       // The action handlers should be set up for all commands
-      expect(Object.keys(registry.commandActions).length).toBe(10);
+      expect(Object.keys(registry.commandActions).length).toBe(23);
       expect(registry.commandActions.configure).toBeDefined();
       expect(registry.commandActions.download).toBeDefined();
       expect(registry.commandActions['sign-in']).toBeDefined();
+      expect(registry.commandActions['app-listen']).toBeDefined();
       expect(registry.commandActions['storefront-build']).toBeDefined();
       expect(registry.commandActions['storefront-dev']).toBeDefined();
       expect(registry.commandActions['storefront-create']).toBeDefined();
@@ -289,6 +439,7 @@ describe('CommandRegistry', () => {
       expect(mockConfigureCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockSignInCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockDownloadCmd.setApp).toHaveBeenCalledWith(mockApp);
+      expect(mockAppListenCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockStorefrontBuildCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockStorefrontDevCmd.setApp).toHaveBeenCalledWith(mockApp);
       expect(mockStorefrontCreateCmd.setApp).toHaveBeenCalledWith(mockApp);

@@ -168,15 +168,14 @@ describe('src/cli.js', () => {
     const { createConfigManager } = await import('../src/core/config.js');
     const { createFileSystem } = await import('../src/io/fileSystem.js');
     const mockFs = createFileSystem();
-    const expectedDefaultPath = path.join(process.cwd(), 'finqu.config.json');
+    const expectedDefaultPath = path.join(process.cwd(), '.env');
 
     // Set default options for commander mock
     mockCommandInstance.opts.mockReturnValue({
-      env: 'production',
       config: expectedDefaultPath,
     });
     mockCommandInstance._parseOptionsResult = {
-      opts: { env: 'production', config: expectedDefaultPath },
+      opts: { config: expectedDefaultPath },
     };
 
     await runCli();
@@ -185,7 +184,7 @@ describe('src/cli.js', () => {
     expect(createConfigManager).toHaveBeenCalledWith(
       mockFs,
       expectedDefaultPath, // Default config path
-      { production: { verbose: undefined } }, // Initial data based on default opts
+      { verbose: undefined }, // Initial data based on default opts
     );
   });
 
@@ -196,7 +195,7 @@ describe('src/cli.js', () => {
     const customConfigPath = '/custom/path/config.json';
 
     // Mock commander's opts to return the custom path *before* runCli
-    const mockOpts = { config: customConfigPath, env: 'production' };
+    const mockOpts = { config: customConfigPath };
     mockCommandInstance.opts.mockReturnValue(mockOpts);
     // Simulate parseOptions storing these opts
     mockCommandInstance._parseOptionsResult = { opts: mockOpts };
@@ -207,7 +206,7 @@ describe('src/cli.js', () => {
     expect(createConfigManager).toHaveBeenCalledWith(
       mockFs,
       customConfigPath, // Custom config path from mocked options
-      { production: { verbose: undefined } }, // Initial data based on mocked opts
+      { verbose: undefined }, // Initial data based on mocked opts
     );
   });
 
@@ -220,7 +219,7 @@ describe('src/cli.js', () => {
     vi.mocked(createConfigManager).mockResolvedValue(mockConfigManager);
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -245,7 +244,7 @@ describe('src/cli.js', () => {
     vi.mocked(createConfigManager).mockResolvedValue(mockConfigManager);
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -263,7 +262,6 @@ describe('src/cli.js', () => {
     // Mock commander's opts to return verbose: true
     const mockOpts = {
       verbose: true,
-      env: 'production',
       config: 'default.json',
     };
     mockCommandInstance.opts.mockReturnValue(mockOpts);
@@ -285,7 +283,7 @@ describe('src/cli.js', () => {
     expect(createConfigManager).toHaveBeenCalledWith(
       mockFs,
       'default.json',
-      { production: { verbose: true } }, // Initial data includes CLI option
+      { verbose: true }, // Initial data includes CLI option
     );
   });
 
@@ -299,7 +297,6 @@ describe('src/cli.js', () => {
     // Mock commander's opts to return verbose: true
     const mockOpts = {
       verbose: true,
-      env: 'production',
       config: 'default.json',
     };
     mockCommandInstance.opts.mockReturnValue(mockOpts);
@@ -332,7 +329,7 @@ describe('src/cli.js', () => {
     const mockFileSystem = createFileSystem();
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -357,7 +354,7 @@ describe('src/cli.js', () => {
     vi.mocked(createFullApp).mockResolvedValue(mockApp);
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -372,7 +369,7 @@ describe('src/cli.js', () => {
     process.argv = ['node', 'cli.js', 'deploy']; // Example command
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -395,7 +392,7 @@ describe('src/cli.js', () => {
     vi.mocked(createLogger).mockReturnValue(mockLogger);
 
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -410,7 +407,7 @@ describe('src/cli.js', () => {
 
   it('should setup basic commander options', async () => {
     // Set default options for commander mock
-    const defaultOpts = { env: 'production', config: 'default.json' };
+    const defaultOpts = { config: 'default.json' };
     mockCommandInstance.opts.mockReturnValue(defaultOpts);
     mockCommandInstance._parseOptionsResult = { opts: defaultOpts };
 
@@ -425,14 +422,9 @@ describe('src/cli.js', () => {
       false,
     );
     expect(mockCommandInstance.option).toHaveBeenCalledWith(
-      '-e, --env <environment>',
-      expect.any(String),
-      'production',
-    );
-    expect(mockCommandInstance.option).toHaveBeenCalledWith(
       '-c, --config <path>',
       expect.any(String),
-      expect.stringContaining('finqu.config.json'),
+      expect.stringContaining('.env'),
     );
   });
 

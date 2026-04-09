@@ -1,5 +1,5 @@
 /**
- * Token Manager service for Finqu Theme Kit
+ * Token Manager service for Finqu CLI
  * Handles OAuth token management and refreshing
  */
 import prompts from 'prompts';
@@ -36,10 +36,7 @@ export class TokenManager {
   }
 
   hasAccessToken() {
-    // Check if access token exists
-    const accessToken =
-      this.configManager.get('accessToken') ||
-      this.configManager.get('access_token');
+    const accessToken = this.configManager.get('accessToken');
     return !!accessToken;
   }
 
@@ -48,15 +45,11 @@ export class TokenManager {
    * @returns {boolean} True if token is valid
    */
   isTokenValid() {
-    // Check if token exists
-    const accessToken =
-      this.configManager.get('accessToken') ||
-      this.configManager.get('access_token');
+    const accessToken = this.configManager.get('accessToken');
     if (!accessToken) {
       return false;
     }
 
-    // Check expiration
     const expiresAt = this.configManager.get('expiresAt');
     const now = Date.now();
 
@@ -71,10 +64,7 @@ export class TokenManager {
    * @returns {Promise<string>} Valid access token
    */
   async ensureValidToken() {
-    // Check if token exists
-    const accessToken =
-      this.configManager.get('accessToken') ||
-      this.configManager.get('access_token');
+    const accessToken = this.configManager.get('accessToken');
     if (!accessToken) {
       throw new Error('No access token found. Please sign in first.');
     }
@@ -121,18 +111,18 @@ export class TokenManager {
             name: 'apiKey',
             message: 'Client Key',
             validate: (value) =>
-              value && value.length === 32
+              value && String(value).trim().length > 0
                 ? true
-                : 'Key must be 32 characters long',
+                : 'Key is required',
           },
           {
             type: 'password',
             name: 'apiSecret',
             message: 'Client Secret',
             validate: (value) =>
-              value && value.length === 32
+              value && String(value).trim().length > 0
                 ? true
-                : 'Secret must be 32 characters long',
+                : 'Secret is required',
           },
         ],
         {
@@ -233,18 +223,18 @@ export class TokenManager {
                   name: 'apiKey',
                   message: 'Client Key',
                   validate: (value) =>
-                    value && value.length === 32
+                    value && String(value).trim().length > 0
                       ? true
-                      : 'Key must be 32 characters long',
+                      : 'Key is required',
                 },
                 {
                   type: 'password',
                   name: 'apiSecret',
                   message: 'Client Secret',
                   validate: (value) =>
-                    value && value.length === 32
+                    value && String(value).trim().length > 0
                       ? true
-                      : 'Secret must be 32 characters long',
+                      : 'Secret is required',
                 },
               ],
               {
@@ -290,6 +280,8 @@ export class TokenManager {
           'themes_read',
           'themes_write',
           'sales_channel_read',
+          'partner:apps_read',
+          'partner:apps_write',
         ]),
       };
 
@@ -339,7 +331,7 @@ export class TokenManager {
               // Apply the new access token to the HTTP client headers for the next request
               // Use the Authorization: Bearer format for the access token
               this.httpClient.defaultHeaders = () => ({
-                'User-Agent': 'Finqu Theme Kit',
+                'User-Agent': 'Finqu CLI',
                 Authorization: `Bearer ${accessToken}`,
               });
 

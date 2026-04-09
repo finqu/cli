@@ -1,5 +1,5 @@
 /**
- * Error handling utilities for Finqu Theme Kit
+ * Error handling utilities for Finqu CLI
  * Provides consistent error handling across the application
  */
 

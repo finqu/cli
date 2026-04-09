@@ -1,5 +1,5 @@
 /**
- * Sign-in command for Finqu Theme Kit
+ * Sign-in command for Finqu CLI
  * Handles authentication using OAuth
  */
 import { BaseCommand } from './base.js';

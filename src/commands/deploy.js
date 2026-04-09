@@ -1,5 +1,5 @@
 /**
- * Deploy command for Finqu Theme Kit
+ * Deploy command for Finqu CLI
  * Handles uploading theme assets to the server
  */
 import path from 'path';

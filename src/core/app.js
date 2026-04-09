@@ -1,5 +1,5 @@
 /**
- * Application initialization module for Finqu Theme Kit
+ * Application initialization module for Finqu CLI
  * Provides a clean dependency injection setup for all components
  */
 import { createFileSystem } from '../io/fileSystem.js';
@@ -7,6 +7,8 @@ import { createHttpClient } from '../services/http.js';
 import { createThemeApi } from '../services/themeApi.js';
 import { createTokenManager } from '../services/tokenManager.js';
 import { createProfileService } from '../services/profileService.js';
+import { createAppWebhookListener } from '../services/app-webhook-listener.js';
+import { createAppApi } from '../services/appApi.js';
 import { AppError } from './error.js';
 
 /**
@@ -31,10 +33,9 @@ export async function createApp(options = {}, configManager, logger) {
   // Create HTTP client with default headers
   const httpClient = createHttpClient({
     defaultHeaders: () => {
-      const accessToken =
-        configManager.get('accessToken') || configManager.get('access_token');
+      const accessToken = configManager.get('accessToken');
       return {
-        'User-Agent': 'Finqu Theme Kit',
+        'User-Agent': 'Finqu CLI',
         // Use standard OAuth2 Authorization header format instead of custom header
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       };
@@ -57,8 +58,9 @@ export async function createApp(options = {}, configManager, logger) {
     profileService,
   );
 
-  // Initialize themeApi as null - will be created on demand after sign-in
+  // Initialize themeApi and appApi as null - will be created on demand after sign-in
   let themeApiInstance = null;
+  let appApiInstance = null;
 
   // Return the application instance with all services
   return {
@@ -69,6 +71,10 @@ export async function createApp(options = {}, configManager, logger) {
       http: httpClient,
       tokenManager: tokenManager,
       profile: profileService,
+      appWebhookListener: createAppWebhookListener({
+        config: configManager,
+        logger,
+      }),
 
       // Provide themeApi as a getter function that initializes it lazily
       get themeApi() {
@@ -89,6 +95,19 @@ export async function createApp(options = {}, configManager, logger) {
           );
         }
         return themeApiInstance;
+      },
+
+      // Provide appApi as a getter that initializes lazily
+      get appApi() {
+        if (!appApiInstance) {
+          appApiInstance = createAppApi(
+            httpClient,
+            tokenManager,
+            logger,
+            configManager,
+          );
+        }
+        return appApiInstance;
       },
     },
   };

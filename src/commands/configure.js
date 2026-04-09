@@ -1,5 +1,5 @@
 /**
- * Configure command for Finqu Theme Kit
+ * Configure command for Finqu CLI
  * Handles theme configuration setup
  */
 import prompts from 'prompts';
