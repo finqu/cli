@@ -1,5 +1,5 @@
 /**
- * Logger module for Finqu Theme Kit
+ * Logger module for Finqu CLI
  * Handles all console output with color formatting and verbosity control
  */
 import chalk from 'chalk';

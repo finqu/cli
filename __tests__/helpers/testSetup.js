@@ -4,6 +4,10 @@ import {
   createMockFileSystem,
   createMockConfig,
   createMockThemeApi,
+  createMockAppApi,
+  createMockTokenManager,
+  createMockProfileService,
+  createMockAppWebhookListener,
 } from './mockServices.js';
 
 /**
@@ -26,6 +30,11 @@ export function createMockApp(options = {}) {
         ? createMockConfig(options.config)
         : createMockConfig();
   const themeApi = options.themeApi || createMockThemeApi();
+  const tokenManager = options.tokenManager || createMockTokenManager();
+  const profile = options.profile || createMockProfileService();
+  const appWebhookListener =
+    options.appWebhookListener || createMockAppWebhookListener();
+  const appApi = options.appApi || createMockAppApi();
 
   // Create and return the mock app
   return {
@@ -34,7 +43,10 @@ export function createMockApp(options = {}) {
     config,
     services: {
       themeApi,
-      // Add other services as needed
+      appApi,
+      tokenManager,
+      profile,
+      appWebhookListener,
     },
   };
 }

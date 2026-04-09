@@ -1,5 +1,5 @@
 /**
- * HTTP client service for Finqu Theme Kit
+ * HTTP client service for Finqu CLI
  * Abstracts HTTP requests for better testability
  */
 import request from 'request';

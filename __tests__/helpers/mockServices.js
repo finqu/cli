@@ -55,6 +55,65 @@ export function createMockConfig(configValues = {}) {
     set: vi.fn(),
     remove: vi.fn(),
     saveConfig: vi.fn().mockResolvedValue(true),
+    saveConfigValue: vi.fn().mockResolvedValue(true),
+  };
+}
+
+/**
+ * Creates a mock token manager service
+ * @returns {Object} Mock token manager object
+ */
+export function createMockTokenManager() {
+  return {
+    hasAccessToken: vi.fn().mockReturnValue(true),
+    ensureValidToken: vi.fn().mockResolvedValue('mock-access-token'),
+    getAccessToken: vi.fn().mockResolvedValue('mock-access-token'),
+  };
+}
+
+/**
+ * Creates a mock profile service
+ * @returns {Object} Mock profile service object
+ */
+export function createMockProfileService() {
+  return {
+    getProfile: vi.fn().mockResolvedValue({
+      merchant: { id: 123 },
+    }),
+  };
+}
+
+/**
+ * Creates a mock app webhook listener service
+ * @returns {Object} Mock app webhook listener object
+ */
+export function createMockAppWebhookListener() {
+  return {
+    resolveRealtimeUrl: vi
+      .fn()
+      .mockReturnValue('wss://realtime.example.com/ws/webhooks'),
+    listen: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/**
+ * Creates a mock app API service with common methods mocked
+ * @returns {Object} Mock app API object
+ */
+export function createMockAppApi() {
+  return {
+    listApps: vi.fn().mockResolvedValue([]),
+    getApp: vi.fn().mockResolvedValue({}),
+    createApp: vi.fn().mockResolvedValue({ id: 1 }),
+    updateApp: vi.fn().mockResolvedValue(undefined),
+    deleteApp: vi.fn().mockResolvedValue({ deleted: true }),
+    getShareLink: vi
+      .fn()
+      .mockResolvedValue({ share_url: 'https://example.com/share' }),
+    publishApp: vi.fn().mockResolvedValue(undefined),
+    unpublishApp: vi.fn().mockResolvedValue(undefined),
+    releaseVersion: vi.fn().mockResolvedValue({ version: '1.0.0' }),
+    rotateSecret: vi.fn().mockResolvedValue({ client_secret: 'new-secret' }),
   };
 }
 

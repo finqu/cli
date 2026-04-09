@@ -286,7 +286,6 @@ describe('TokenManager', () => {
     mockConfigManager.get.mockImplementation((key, defaultValue = null) => {
       switch (key) {
         case 'accessToken':
-        case 'access_token': // Handle both naming conventions
           return 'mock-access-token';
         case 'refreshToken':
           return 'mock-refresh-token';
@@ -372,8 +371,7 @@ describe('TokenManager', () => {
   test('refreshToken should throw an error if no refresh token exists', async () => {
     // Setup access token but no refresh token
     mockConfigManager.get.mockImplementation((key) => {
-      if (key === 'accessToken' || key === 'access_token')
-        return 'mock-access-token';
+      if (key === 'accessToken') return 'mock-access-token';
       return null; // No refresh token
     });
 
@@ -385,14 +383,6 @@ describe('TokenManager', () => {
   test('hasAccessToken should return true when access token exists', () => {
     mockConfigManager.get.mockImplementation((key) => {
       if (key === 'accessToken') return 'mock-access-token';
-      return null;
-    });
-    expect(tokenManager.hasAccessToken()).toBe(true);
-  });
-
-  test('hasAccessToken should return true when access_token exists (alternate key)', () => {
-    mockConfigManager.get.mockImplementation((key) => {
-      if (key === 'access_token') return 'mock-access-token';
       return null;
     });
     expect(tokenManager.hasAccessToken()).toBe(true);

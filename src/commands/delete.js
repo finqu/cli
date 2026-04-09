@@ -1,5 +1,5 @@
 /**
- * Delete command for Finqu Theme Kit
+ * Delete command for Finqu CLI
  * Handles deleting theme assets from the server
  */
 import { BaseCommand } from './base.js';

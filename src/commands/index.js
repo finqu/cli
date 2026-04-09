@@ -13,6 +13,19 @@ import { createStorefrontBuildCommand } from './storefront-build.js';
 import { createStorefrontDevCommand } from './storefront-dev.js';
 import { createStorefrontCreateCommand } from './storefront-create.js';
 import { createThemeDevCommand } from './theme-dev.js';
+import { createAppListenCommand } from './app-listen.js';
+import { createAppLinkCommand } from './app-link.js';
+import { createAppListCommand } from './app-list.js';
+import { createAppInfoCommand } from './app-info.js';
+import { createAppCreateCommand } from './app-create.js';
+import { createAppUpdateCommand } from './app-update.js';
+import { createAppDeleteCommand } from './app-delete.js';
+import { createAppShareCommand } from './app-share.js';
+import { createAppPublishCommand } from './app-publish.js';
+import { createAppUnpublishCommand } from './app-unpublish.js';
+import { createAppReleaseCommand } from './app-release.js';
+import { createAppRotateSecretCommand } from './app-rotate-secret.js';
+import { createMigrateCommand } from './migrate.js';
 import { COMMAND_GROUPS } from '../core/command-groups.js';
 
 /**
@@ -46,6 +59,19 @@ export class CommandRegistry {
       delete: createDeleteCommand(this.app),
       watch: createWatchCommand(this.app),
       'theme-dev': createThemeDevCommand(this.app),
+      'app-listen': createAppListenCommand(this.app),
+      'app-link': createAppLinkCommand(this.app),
+      'app-list': createAppListCommand(this.app),
+      'app-info': createAppInfoCommand(this.app),
+      'app-create': createAppCreateCommand(this.app),
+      'app-update': createAppUpdateCommand(this.app),
+      'app-delete': createAppDeleteCommand(this.app),
+      'app-share': createAppShareCommand(this.app),
+      'app-publish': createAppPublishCommand(this.app),
+      'app-unpublish': createAppUnpublishCommand(this.app),
+      'app-release': createAppReleaseCommand(this.app),
+      'app-rotate-secret': createAppRotateSecretCommand(this.app),
+      migrate: createMigrateCommand(this.app),
       'storefront-build': createStorefrontBuildCommand(this.app),
       'storefront-dev': createStorefrontDevCommand(this.app),
       'storefront-create': createStorefrontCreateCommand(this.app),

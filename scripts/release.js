@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Release script for Finqu Theme Kit
+ * Release script for Finqu CLI
  * Handles version bumping, tagging, and pushing
  *
  * Usage:

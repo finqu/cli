@@ -74,7 +74,7 @@ describe('createApp', () => {
     mockConfigManager = {
       get: vi.fn((key, defaultValue) => {
         // Provide default values for common config keys
-        if (key === 'accessToken' || key === 'access_token') return 'test-token';
+        if (key === 'accessToken') return 'test-token';
         if (key === 'resourceUrl') return 'https://api.example.com';
         if (key === 'apiVersion') return '1.2';
         return defaultValue !== undefined ? defaultValue : null;
@@ -161,10 +161,9 @@ describe('createApp', () => {
     );
     // Wait for the async token manager creation if necessary
     await vi.waitFor(async () => {
-        expect(app.services.tokenManager).toBe(mockTokenManager);
+      expect(app.services.tokenManager).toBe(mockTokenManager);
     });
   });
-
 
   test('should initialize themeApi lazily on first access', async () => {
     const app = await createApp({}, mockConfigManager, mockLogger);
@@ -195,7 +194,7 @@ describe('createApp', () => {
     // Arrange: Configure mockConfigManager to return null for resourceUrl
     vi.mocked(mockConfigManager.get).mockImplementation((key) => {
       if (key === 'resourceUrl') return null;
-      if (key === 'accessToken' || key === 'access_token') return 'test-token';
+      if (key === 'accessToken') return 'test-token';
       return null;
     });
 
@@ -218,7 +217,11 @@ describe('createApp', () => {
   });
 
   test('should use custom fileSystem if provided in options', async () => {
-    const customFileSystem = { readFile: vi.fn(), writeFile: vi.fn(), exists: vi.fn() };
+    const customFileSystem = {
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exists: vi.fn(),
+    };
     const app = await createApp(
       { fileSystem: customFileSystem }, // Provide custom instance
       mockConfigManager,

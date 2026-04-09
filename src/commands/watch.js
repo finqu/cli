@@ -1,5 +1,5 @@
 /**
- * Watch command for Finqu Theme Kit
+ * Watch command for Finqu CLI
  * Watches for file changes and automatically deploys them to the server
  */
 import { BaseCommand } from './base.js';

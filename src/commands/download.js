@@ -1,5 +1,5 @@
 /**
- * Download command for Finqu Theme Kit
+ * Download command for Finqu CLI
  * Handles downloading theme assets from the server
  */
 import path from 'path';

@@ -1,5 +1,5 @@
 /**
- * Base command class for Finqu Theme Kit
+ * Base command class for Finqu CLI
  * Provides common functionality for all commands
  */
 import { AppError } from '../core/error.js';

@@ -9,6 +9,9 @@
  * @type {Object.<string, {description: string}>}
  */
 export const COMMAND_GROUPS = {
+  app: {
+    description: 'App management, authentication and webhook commands',
+  },
   theme: {
     description: 'Theme development and deployment commands',
   },

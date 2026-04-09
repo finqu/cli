@@ -72,13 +72,12 @@ This will create a new Next.js project with Puck editor integration and sample c
 
 These global options can be used with any command:
 
-| Option                    | Description                                  | Default               |
-| ------------------------- | -------------------------------------------- | --------------------- |
-| `-v, --verbose`           | Enable detailed logging output               | `false`               |
-| `-e, --env <environment>` | Specify the configuration environment to use | `production`          |
-| `-c, --config <path>`     | Path to the configuration file               | `./finqu.config.json` |
-| `--help`                  | Display help information                     |                       |
-| `--version`               | Display version information                  |                       |
+| Option                | Description                    | Default  |
+| --------------------- | ------------------------------ | -------- |
+| `-v, --verbose`       | Enable detailed logging output | `false`  |
+| `-c, --config <path>` | Path to the configuration file | `./.env` |
+| `--help`              | Display help information       |          |
+| `--version`           | Display version information    |          |
 
 ### Authentication
 
@@ -96,6 +95,172 @@ finqu sign-in
 | `--secret <secret>` | API secret  |
 
 The authentication process uses OAuth 2.0 and will open a browser window for you to complete the sign-in process if credentials are not provided directly.
+
+### App Commands
+
+All app-related commands are grouped under `finqu app`:
+
+#### create
+
+Create a new app:
+
+```bash
+finqu app create [name]
+```
+
+| Option                      | Description        | Default                                      |
+| --------------------------- | ------------------ | -------------------------------------------- |
+| `--name <name>`             | App display name   |                                              |
+| `--base-uri <uri>`          | HTTP base URI      | `http://localhost:3000`                      |
+| `--install-endpoint <path>` | Install endpoint   | `/api/install`                               |
+| `--redirect-uri <uri>`      | OAuth redirect URI | `http://localhost:3000/api/install/callback` |
+
+Any missing values will be prompted interactively. The command creates a draft app and scaffolds a project directory.
+
+#### link
+
+Link the current project to an existing app:
+
+```bash
+finqu app link <appId>
+```
+
+Saves the app ID to your configuration so subsequent commands can resolve it automatically.
+
+#### list
+
+List all your apps:
+
+```bash
+finqu app list
+```
+
+Displays a table with ID, name, handle, status, and version. The currently linked app is marked with `●`.
+
+#### info
+
+Show app details:
+
+```bash
+finqu app info
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+Displays name, handle, ID, publish status, version, client ID, redirect URIs, base URI, and version history.
+
+#### update
+
+Update app configuration or listing:
+
+```bash
+finqu app update
+```
+
+| Option                   | Description                                               |
+| ------------------------ | --------------------------------------------------------- |
+| `--app-id <id>`          | App ID (uses linked app if omitted)                       |
+| `--configuration <json>` | Configuration as JSON string                              |
+| `--listing <json>`       | Listing data as JSON string                               |
+| `--redirect-uri <uri>`   | OAuth redirect URI (use `\|` separator for multiple)      |
+| `--locations <codes...>` | ISO country codes to restrict availability (omit for all) |
+
+#### delete
+
+Delete an app:
+
+```bash
+finqu app delete
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+Draft apps are deleted immediately. Published apps have their deletion scheduled.
+
+#### release
+
+Release a new app version:
+
+```bash
+finqu app release
+```
+
+| Option                | Description                             |
+| --------------------- | --------------------------------------- |
+| `--app-id <id>`       | App ID (uses linked app if omitted)     |
+| `--version <version>` | Explicit version in MAJOR.MINOR.PATCH   |
+| `--type <type>`       | Bump type: `major`, `minor`, or `patch` |
+| `--changelog <text>`  | Release notes                           |
+
+#### publish
+
+Publish the app to the app store:
+
+```bash
+finqu app publish
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+#### unpublish
+
+Remove the app from the app store:
+
+```bash
+finqu app unpublish
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+#### share
+
+Get or create a share link for the app:
+
+```bash
+finqu app share
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+#### rotate-secret
+
+Rotate the OAuth client secret:
+
+```bash
+finqu app rotate-secret
+```
+
+| Option          | Description                         |
+| --------------- | ----------------------------------- |
+| `--app-id <id>` | App ID (uses linked app if omitted) |
+
+Displays the new client secret after rotation.
+
+#### listen
+
+Connect to Finqu realtime webhooks and forward events to localhost:
+
+```bash
+finqu app listen
+```
+
+| Option                 | Description                                             | Default                          |
+| ---------------------- | ------------------------------------------------------- | -------------------------------- |
+| `--url <url>`          | Local webhook receiver URL                              | `http://localhost:3000/webhooks` |
+| `--realtime-url <url>` | Realtime websocket URL override                         |                                  |
+| `--topic <topics...>`  | Only forward matching topics (space or comma separated) |                                  |
+
+Requires authentication via `finqu sign-in`. Forwards webhook event envelopes as JSON to the local URL. Handles graceful shutdown on SIGINT/SIGTERM.
 
 ### Theme Commands
 
@@ -198,6 +363,30 @@ This command monitors your local theme directory for changes and automatically u
 
 > **Deprecated:** `finqu theme watch` is deprecated and will be removed in a future release. Use `finqu theme dev` for local theme rendering and a better development workflow.
 
+### Utility Commands
+
+#### migrate
+
+Convert a legacy `finqu.config.json` configuration file to the new `.env` format:
+
+```bash
+finqu migrate
+```
+
+| Option                 | Description                                    | Default             |
+| ---------------------- | ---------------------------------------------- | ------------------- |
+| `--json-config <path>` | Path to the legacy JSON configuration file     | `finqu.config.json` |
+| `--output <path>`      | Output path for the generated `.env` file      | `.env`              |
+| `--force`              | Overwrite the output file if it already exists | `false`             |
+
+The migration process:
+
+1. Reads the legacy `finqu.config.json` file
+2. Extracts settings from the `production` environment (warns about other environments)
+3. Flattens nested `store` object into individual keys
+4. Writes all values as `FINQU_`-prefixed variables to the `.env` file
+5. Preserves any existing non-`FINQU_` keys in the output file
+
 ### Storefront Commands
 
 All storefront-related commands are grouped under `finqu storefront`:
@@ -283,48 +472,57 @@ Finqu CLI supports the following environment variables:
 | `FINQU_API_CLIENT_ID`     | API Client key to use for authentication (alternative to using --key)       |
 | `FINQU_API_CLIENT_SECRET` | API Client secret to use for authentication (alternative to using --secret) |
 
+All configuration keys listed below can also be set as environment variables with a `FINQU_` prefix in screaming snake case (e.g. `FINQU_THEME_DIR`, `FINQU_RESOURCE_URL`). Environment variables in your `.env` file and process environment are both supported.
+
 ## Configuration Structure
 
-Finqu CLI uses a JSON configuration file (default: `finqu.config.json`) to store settings. The configuration structure supports multiple environments.
+Finqu CLI uses a `.env` file (default: `.env` in current directory) to store settings as `FINQU_`-prefixed environment variables.
 
-### Sample Configurations
+### Example Configuration
 
-#### Example Configuration
-
-```json
-{
-  "production": {
-    "themeDir": "/path/to/theme/directory",
-    "resourceUrl": "https://<your-env>.api.myfinqu.com",
-    "apiVersion": "1.2",
-    "accessToken": "<oauth_access_token>",
-    "refreshToken": "<oauth_refresh_token>",
-    "expiresAt": 1784447850458,
-    "store": {
-      "merchantId": 6,
-      "id": 57704,
-      "themeId": 870,
-      "versionId": "152bd77a7749171803307263acec8028",
-      "domain": "example.finqustore.com"
-    }
-  }
-}
+```env
+FINQU_THEME_DIR=/path/to/theme/directory
+FINQU_RESOURCE_URL=https://<your-env>.api.myfinqu.com
+FINQU_API_VERSION=1.2
+FINQU_ACCESS_TOKEN=<oauth_access_token>
+FINQU_REFRESH_TOKEN=<oauth_refresh_token>
+FINQU_EXPIRES_AT=1784447850458
+FINQU_STORE_MERCHANT_ID=6
+FINQU_STORE_ID=57704
+FINQU_STORE_THEME_ID=870
+FINQU_STORE_VERSION_ID=152bd77a7749171803307263acec8028
+FINQU_STORE_DOMAIN=example.finqustore.com
 ```
 
 ### Configuration Keys
 
-| Key            | Description                                               |
-| -------------- | --------------------------------------------------------- |
-| `themeDir`     | Local directory path for theme files                      |
-| `resourceUrl`  | Finqu API base URL (set by `finqu sign-in`)               |
-| `apiVersion`   | Finqu API version (optional, default: `1.2`)              |
-| `accessToken`  | OAuth 2.0 access token (automatically managed)            |
-| `refreshToken` | OAuth 2.0 refresh token (automatically managed)           |
-| `expiresAt`    | Access token expiration timestamp (automatically managed) |
-| `store`        | Store/theme selection (set by `finqu theme configure`)    |
-| `verbose`      | Enable or disable verbose logging                         |
+| Key               | Env Variable              | Description                                               |
+| ----------------- | ------------------------- | --------------------------------------------------------- |
+| `themeDir`        | `FINQU_THEME_DIR`         | Local directory path for theme files                      |
+| `resourceUrl`     | `FINQU_RESOURCE_URL`      | Finqu API base URL (set by `finqu sign-in`)               |
+| `apiVersion`      | `FINQU_API_VERSION`       | Finqu API version (optional, default: `1.2`)              |
+| `accessToken`     | `FINQU_ACCESS_TOKEN`      | OAuth 2.0 access token (automatically managed)            |
+| `refreshToken`    | `FINQU_REFRESH_TOKEN`     | OAuth 2.0 refresh token (automatically managed)           |
+| `expiresAt`       | `FINQU_EXPIRES_AT`        | Access token expiration timestamp (automatically managed) |
+| `appRealtimeUrl`  | `FINQU_APP_REALTIME_URL`  | Realtime websocket URL used by `finqu app listen`         |
+| `storeMerchantId` | `FINQU_STORE_MERCHANT_ID` | Store merchant ID (set by `finqu theme configure`)        |
+| `storeId`         | `FINQU_STORE_ID`          | Store ID (set by `finqu theme configure`)                 |
+| `storeThemeId`    | `FINQU_STORE_THEME_ID`    | Theme ID (set by `finqu theme configure`)                 |
+| `storeVersionId`  | `FINQU_STORE_VERSION_ID`  | Theme version ID (set by `finqu theme configure`)         |
+| `storeDomain`     | `FINQU_STORE_DOMAIN`      | Store domain (set by `finqu theme configure`)             |
+| `verbose`         | `FINQU_VERBOSE`           | Enable or disable verbose logging                         |
 
-> **Note:** The configuration file is automatically created and updated by the CLI commands. You typically don't need to edit it manually.
+> **Note:** The `.env` file is automatically created and updated by the CLI commands. You typically don't need to edit it manually.
+
+### Migrating from finqu.config.json
+
+If you are upgrading from an older version that used `finqu.config.json`, run the migration command:
+
+```bash
+finqu migrate
+```
+
+This converts your existing JSON configuration to the new `.env` format. See the [migrate](#migrate) command reference for options.
 
 ## Common Workflows
 
@@ -336,6 +534,13 @@ Finqu CLI uses a JSON configuration file (default: `finqu.config.json`) to store
 4. Download theme assets: `finqu theme download`
 5. Install `finqu-theme-dev`: https://developers.finqu.com/apis-and-tools/theme-development-kit/install
 6. Start local development: `finqu theme dev`
+
+### App Webhook Forwarding Setup
+
+1. Authenticate: `finqu sign-in`
+2. Start a local webhook receiver (default target: `http://localhost:3000/webhooks`)
+3. Start realtime forwarding: `finqu app listen`
+4. Optionally filter topics: `finqu app listen --topic orders/create orders/activate`
 
 ### Theme Development Cycle
 
@@ -361,6 +566,8 @@ Finqu CLI uses a JSON configuration file (default: `finqu.config.json`) to store
 ## Troubleshooting
 
 - **Authentication Errors**: Use `finqu sign-in` to refresh your authentication
+- **App Webhook 403 Errors**: Run `finqu sign-in` to refresh credentials
+- **App Webhook Connection Errors**: Start with `finqu app listen --realtime-url wss://<realtime-domain>/ws/webhooks` to verify endpoint configuration
 - **Theme Dev Authentication Errors**: Run `finqu theme dev` again to trigger `finqu-theme-dev auth`, or run `finqu-theme-dev auth` directly
 - **Theme Dev Binary Not Found**: Install `finqu-theme-dev` using the instructions at https://developers.finqu.com/apis-and-tools/theme-development-kit/install
 - **Permission Errors**: Ensure you have the right access permissions to the theme
