@@ -5,7 +5,7 @@
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
 
-const DEFAULT_LOCAL_URL = 'http://localhost:3000/webhooks';
+const DEFAULT_LOCAL_URL = 'http://localhost:3000';
 
 function normalizeTopics(topics) {
   if (!topics) {

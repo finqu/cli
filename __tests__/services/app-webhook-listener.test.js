@@ -121,6 +121,35 @@ describe('AppWebhookListener', () => {
     );
   });
 
+  it('should resolve target URL from event.url and base localUrl', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fetchImpl: fetchMock,
+    });
+
+    await listener.forwardEvent('http://localhost:3000', {
+      topic: 'orders/create',
+      url: '/api/webhooks/orders/create',
+      payload: { id: 1 },
+      source: 'api',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/webhooks/orders/create',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
   it('should stream websocket messages and forward matching topics', async () => {
     const ws = new FakeWebSocket();
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });

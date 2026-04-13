@@ -92,7 +92,7 @@ describe('AppListenCommand', () => {
       expect.objectContaining({
         accessToken: 'existing-token',
         realtimeUrl: 'wss://realtime.example.com/ws/webhooks',
-        localUrl: 'http://localhost:3000/webhooks',
+        localUrl: 'http://localhost:3000',
         topics: [],
       }),
     );

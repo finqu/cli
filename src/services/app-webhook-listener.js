@@ -100,11 +100,15 @@ export class AppWebhookListener {
     event,
     forwardTimeoutMs = DEFAULT_FORWARD_TIMEOUT_MS,
   ) {
+    const targetUrl = event.url
+      ? new URL(event.url, localUrl).toString()
+      : localUrl;
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), forwardTimeoutMs);
 
     try {
-      const response = await this.fetchImpl(localUrl, {
+      const response = await this.fetchImpl(targetUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,12 +284,16 @@ export class AppWebhookListener {
           return;
         }
 
+        const targetUrl = event.url
+          ? new URL(event.url, localUrl).toString()
+          : localUrl;
+
         try {
           await this.forwardEvent(localUrl, event, forwardTimeoutMs);
-          this.logger.printInfo(`Forwarded ${event.topic} to ${localUrl}`);
+          this.logger.printInfo(`Forwarded ${event.topic} to ${targetUrl}`);
         } catch (err) {
           this.logger.printError(
-            `Failed to forward ${event.topic} to ${localUrl}`,
+            `Failed to forward ${event.topic} to ${targetUrl}`,
             err,
           );
         }
