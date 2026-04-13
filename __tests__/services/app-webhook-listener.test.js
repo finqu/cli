@@ -121,7 +121,7 @@ describe('AppWebhookListener', () => {
     );
   });
 
-  it('should resolve target URL from event.url and base localUrl', async () => {
+  it('should resolve target URL from event.path and base localUrl', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     const listener = new AppWebhookListener({
       config: { get: vi.fn() },
@@ -137,7 +137,7 @@ describe('AppWebhookListener', () => {
 
     await listener.forwardEvent('http://localhost:3000', {
       topic: 'orders/create',
-      url: '/api/webhooks/orders/create',
+      path: '/api/webhooks/orders/create',
       payload: { id: 1 },
       source: 'api',
     });

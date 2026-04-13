@@ -100,8 +100,8 @@ export class AppWebhookListener {
     event,
     forwardTimeoutMs = DEFAULT_FORWARD_TIMEOUT_MS,
   ) {
-    const targetUrl = event.url
-      ? new URL(event.url, localUrl).toString()
+    const targetUrl = event.path
+      ? new URL(event.path, localUrl).toString()
       : localUrl;
 
     const controller = new AbortController();
@@ -284,8 +284,8 @@ export class AppWebhookListener {
           return;
         }
 
-        const targetUrl = event.url
-          ? new URL(event.url, localUrl).toString()
+        const targetUrl = event.path
+          ? new URL(event.path, localUrl).toString()
           : localUrl;
 
         try {
