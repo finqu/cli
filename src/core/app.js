@@ -74,6 +74,7 @@ export async function createApp(options = {}, configManager, logger) {
       appWebhookListener: createAppWebhookListener({
         config: configManager,
         logger,
+        fileSystem,
       }),
 
       // Provide themeApi as a getter function that initializes it lazily

@@ -4,6 +4,7 @@
  */
 import WebSocket from 'ws';
 import { AppError } from '../core/error.js';
+import path from 'path';
 
 const DEFAULT_WS_PATH = '/ws/webhooks';
 const DEFAULT_INITIAL_DELAY_MS = 1000;
@@ -11,6 +12,8 @@ const DEFAULT_MAX_DELAY_MS = 30000;
 const DEFAULT_BACKOFF_FACTOR = 2;
 const DEFAULT_RESET_DELAY_AFTER_MS = 30000;
 const DEFAULT_FORWARD_TIMEOUT_MS = 10000;
+const DEFAULT_MAX_BUFFER_SIZE = 50;
+const DEFAULT_BUFFER_FILENAME = '.finqu-webhooks.json';
 
 function toWebSocketScheme(url) {
   if (url.protocol === 'https:') {
@@ -70,10 +73,16 @@ export class AppWebhookListener {
   constructor(options = {}) {
     this.config = options.config;
     this.logger = options.logger;
+    this.fileSystem = options.fileSystem || null;
     this.webSocketFactory =
       options.webSocketFactory ||
       ((url, wsOptions) => new WebSocket(url, wsOptions));
     this.fetchImpl = options.fetchImpl || fetch;
+    this.maxBufferSize = options.maxBufferSize || DEFAULT_MAX_BUFFER_SIZE;
+    this.bufferFilePath =
+      options.bufferFilePath ||
+      path.join(process.cwd(), DEFAULT_BUFFER_FILENAME);
+    this._writeQueue = Promise.resolve();
   }
 
   resolveRealtimeUrl({ explicitRealtimeUrl = null, profile = null } = {}) {
@@ -108,14 +117,17 @@ export class AppWebhookListener {
     const timeout = setTimeout(() => controller.abort(), forwardTimeoutMs);
 
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Finqu-Topic': event.topic || '',
+        'X-Finqu-Source': event.source || '',
+        ...event.headers,
+      };
+
       const response = await this.fetchImpl(targetUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Finqu-Topic': event.topic || '',
-          'X-Finqu-Source': event.source || '',
-        },
-        body: JSON.stringify(event),
+        headers,
+        body: JSON.stringify(event.payload),
         signal: controller.signal,
       });
 
@@ -277,6 +289,8 @@ export class AppWebhookListener {
           return;
         }
 
+        this._bufferEvent(event).catch(() => {});
+
         if (!shouldForwardTopic(event.topic, topics)) {
           this.logger.printVerbose(
             `Skipping topic ${event.topic} due to topic filters.`,
@@ -319,6 +333,91 @@ export class AppWebhookListener {
         });
       });
     });
+  }
+
+  async _bufferEvent(event) {
+    this._writeQueue = this._writeQueue.then(async () => {
+      const events = await this._readBuffer();
+      events.push({
+        ...event,
+        receivedAt: new Date().toISOString(),
+      });
+      while (events.length > this.maxBufferSize) {
+        events.shift();
+      }
+      await this._writeBuffer(events);
+    });
+    return this._writeQueue;
+  }
+
+  async _readBuffer() {
+    try {
+      if (
+        this.fileSystem &&
+        (await this.fileSystem.exists(this.bufferFilePath))
+      ) {
+        const raw = await this.fileSystem.readFile(this.bufferFilePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // Corrupted or unreadable file — start fresh.
+    }
+    return [];
+  }
+
+  async _writeBuffer(events) {
+    if (!this.fileSystem) {
+      return;
+    }
+    try {
+      await this.fileSystem.writeFile(
+        this.bufferFilePath,
+        JSON.stringify(events, null, 2),
+        'utf8',
+      );
+    } catch (err) {
+      this.logger.printVerbose(
+        'Failed to persist webhook buffer to disk.',
+        err,
+      );
+    }
+  }
+
+  async getBufferedEvents({ topics = [] } = {}) {
+    const events = await this._readBuffer();
+    return events.filter((e) => shouldForwardTopic(e.topic, topics));
+  }
+
+  async replayEvents(
+    localUrl,
+    { topics = [], forwardTimeoutMs = DEFAULT_FORWARD_TIMEOUT_MS } = {},
+  ) {
+    const events = await this.getBufferedEvents({ topics });
+
+    if (events.length === 0) {
+      this.logger.printInfo('No buffered events to replay.');
+      return 0;
+    }
+
+    let forwarded = 0;
+    for (const event of events) {
+      const targetUrl = event.path
+        ? new URL(event.path, localUrl).toString()
+        : localUrl;
+      try {
+        await this.forwardEvent(localUrl, event, forwardTimeoutMs);
+        this.logger.printInfo(`Replayed ${event.topic} → ${targetUrl}`);
+        forwarded++;
+      } catch (err) {
+        this.logger.printError(
+          `Failed to replay ${event.topic} → ${targetUrl}`,
+          err,
+        );
+      }
+    }
+
+    return forwarded;
   }
 
   _wait(delayMs, signal) {
