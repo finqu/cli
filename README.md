@@ -262,6 +262,42 @@ finqu app listen
 
 Requires authentication via `finqu sign-in`. Forwards webhook event envelopes as JSON to the local URL. Handles graceful shutdown on SIGINT/SIGTERM.
 
+#### replay
+
+Replay or list buffered webhook events received during the current or previous listener session:
+
+```bash
+finqu app replay
+```
+
+| Option                | Description                                            | Default                 |
+| --------------------- | ------------------------------------------------------ | ----------------------- |
+| `--url <url>`         | Local webhook receiver URL                             | `http://localhost:3000` |
+| `--topic <topics...>` | Only replay matching topics (space or comma separated) |                         |
+| `--index <number>`    | Replay a specific event by its index (see `--list`)    |                         |
+| `--list`              | List buffered events without replaying                 |                         |
+
+Events are persisted to a `.finqu-webhooks.json` file in the working directory, so replay works from a separate terminal and across listener restarts.
+
+**Examples:**
+
+```bash
+# List all buffered events with their indices
+finqu app replay --list
+
+# Replay all buffered events
+finqu app replay
+
+# Replay a specific event by index
+finqu app replay --index 3
+
+# Replay only events matching a topic
+finqu app replay --topic orders/create
+
+# Replay to a custom URL
+finqu app replay --url http://localhost:4000/hooks --index 1
+```
+
 ### Theme Commands
 
 All theme-related commands are grouped under `finqu theme`:
@@ -541,6 +577,8 @@ This converts your existing JSON configuration to the new `.env` format. See the
 2. Start a local webhook receiver (default target: `http://localhost:3000/webhooks`)
 3. Start realtime forwarding: `finqu app listen`
 4. Optionally filter topics: `finqu app listen --topic orders/create orders/activate`
+5. List received events: `finqu app replay --list`
+6. Replay a specific event: `finqu app replay --index 1`
 
 ### Theme Development Cycle
 
