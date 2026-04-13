@@ -121,6 +121,35 @@ describe('AppWebhookListener', () => {
     );
   });
 
+  it('should resolve target URL from event.path and base localUrl', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fetchImpl: fetchMock,
+    });
+
+    await listener.forwardEvent('http://localhost:3000', {
+      topic: 'orders/create',
+      path: '/api/webhooks/orders/create',
+      payload: { id: 1 },
+      source: 'api',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/webhooks/orders/create',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
   it('should stream websocket messages and forward matching topics', async () => {
     const ws = new FakeWebSocket();
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
@@ -170,5 +199,267 @@ describe('AppWebhookListener', () => {
       'http://localhost:3000/webhooks',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('should buffer received events during listen', async () => {
+    const ws = new FakeWebSocket();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    let fileContent = '[]';
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(true),
+      readFile: vi.fn().mockImplementation(() => fileContent),
+      writeFile: vi.fn().mockImplementation((_path, data) => {
+        fileContent = data;
+      }),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fetchImpl: fetchMock,
+      webSocketFactory: vi.fn().mockReturnValue(ws),
+      fileSystem: mockFileSystem,
+    });
+
+    const abortController = new AbortController();
+
+    const listenPromise = listener.listen({
+      realtimeUrl: 'wss://realtime.example.com/ws/webhooks',
+      accessToken: 'token',
+      localUrl: 'http://localhost:3000/webhooks',
+      topics: [],
+      signal: abortController.signal,
+      initialDelayMs: 1,
+      maxDelayMs: 1,
+    });
+
+    ws.emit('open');
+    ws.emit(
+      'message',
+      JSON.stringify({ topic: 'orders/create', payload: { id: 1 } }),
+    );
+    ws.emit(
+      'message',
+      JSON.stringify({ topic: 'products/update', payload: { id: 2 } }),
+    );
+
+    // Give async _bufferEvent time to write
+    await new Promise((r) => setTimeout(r, 50));
+
+    abortController.abort();
+    ws.emit('close', 1000, 'done');
+
+    await listenPromise;
+
+    const buffered = await listener.getBufferedEvents();
+    expect(buffered).toHaveLength(2);
+    expect(buffered[0].topic).toBe('orders/create');
+    expect(buffered[1].topic).toBe('products/update');
+    expect(buffered[0].receivedAt).toBeDefined();
+  });
+
+  it('should filter buffered events by topic', async () => {
+    const storedEvents = [
+      { topic: 'orders/create', receivedAt: '2026-01-01T00:00:00.000Z' },
+      { topic: 'products/update', receivedAt: '2026-01-01T00:00:01.000Z' },
+      { topic: 'orders/create', receivedAt: '2026-01-01T00:00:02.000Z' },
+    ];
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(true),
+      readFile: vi.fn().mockResolvedValue(JSON.stringify(storedEvents)),
+      writeFile: vi.fn(),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fileSystem: mockFileSystem,
+    });
+
+    const filtered = await listener.getBufferedEvents({
+      topics: ['orders/create'],
+    });
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every((e) => e.topic === 'orders/create')).toBe(true);
+  });
+
+  it('should enforce max buffer size', async () => {
+    let fileContent = '[]';
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(true),
+      readFile: vi.fn().mockImplementation(() => fileContent),
+      writeFile: vi.fn().mockImplementation((_path, data) => {
+        fileContent = data;
+      }),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      maxBufferSize: 3,
+      fileSystem: mockFileSystem,
+    });
+
+    for (let i = 0; i < 5; i++) {
+      await listener._bufferEvent({ topic: `topic-${i}` });
+    }
+
+    const events = await listener._readBuffer();
+    expect(events).toHaveLength(3);
+    expect(events[0].topic).toBe('topic-2');
+    expect(events[2].topic).toBe('topic-4');
+  });
+
+  it('should replay buffered events to local URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const logger = {
+      printInfo: vi.fn(),
+      printError: vi.fn(),
+      printSuccess: vi.fn(),
+      printVerbose: vi.fn(),
+      printStatus: vi.fn(),
+    };
+    const storedEvents = [
+      {
+        topic: 'orders/create',
+        payload: { id: 1 },
+        receivedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        topic: 'products/update',
+        payload: { id: 2 },
+        receivedAt: '2026-01-01T00:00:01.000Z',
+      },
+    ];
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(true),
+      readFile: vi.fn().mockResolvedValue(JSON.stringify(storedEvents)),
+      writeFile: vi.fn(),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger,
+      fetchImpl: fetchMock,
+      fileSystem: mockFileSystem,
+    });
+
+    const count = await listener.replayEvents('http://localhost:3000/webhooks');
+
+    expect(count).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(logger.printInfo).toHaveBeenCalledWith(
+      expect.stringContaining('Replayed orders/create'),
+    );
+  });
+
+  it('should replay only matching topics', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const storedEvents = [
+      {
+        topic: 'orders/create',
+        payload: { id: 1 },
+        receivedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        topic: 'products/update',
+        payload: { id: 2 },
+        receivedAt: '2026-01-01T00:00:01.000Z',
+      },
+    ];
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(true),
+      readFile: vi.fn().mockResolvedValue(JSON.stringify(storedEvents)),
+      writeFile: vi.fn(),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fetchImpl: fetchMock,
+      fileSystem: mockFileSystem,
+    });
+
+    const count = await listener.replayEvents('http://localhost:3000', {
+      topics: ['orders/create'],
+    });
+
+    expect(count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return 0 when no events to replay', async () => {
+    const logger = {
+      printInfo: vi.fn(),
+      printError: vi.fn(),
+      printSuccess: vi.fn(),
+      printVerbose: vi.fn(),
+      printStatus: vi.fn(),
+    };
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(false),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger,
+      fileSystem: mockFileSystem,
+    });
+
+    const count = await listener.replayEvents('http://localhost:3000');
+
+    expect(count).toBe(0);
+    expect(logger.printInfo).toHaveBeenCalledWith(
+      'No buffered events to replay.',
+    );
+  });
+
+  it('should return empty array when buffer file does not exist', async () => {
+    const mockFileSystem = {
+      exists: vi.fn().mockResolvedValue(false),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+    };
+
+    const listener = new AppWebhookListener({
+      config: { get: vi.fn() },
+      logger: {
+        printInfo: vi.fn(),
+        printError: vi.fn(),
+        printSuccess: vi.fn(),
+        printVerbose: vi.fn(),
+        printStatus: vi.fn(),
+      },
+      fileSystem: mockFileSystem,
+    });
+
+    const events = await listener.getBufferedEvents();
+    expect(events).toEqual([]);
   });
 });

@@ -25,6 +25,7 @@ import { createAppPublishCommand } from './app-publish.js';
 import { createAppUnpublishCommand } from './app-unpublish.js';
 import { createAppReleaseCommand } from './app-release.js';
 import { createAppRotateSecretCommand } from './app-rotate-secret.js';
+import { createAppReplayCommand } from './app-replay.js';
 import { createMigrateCommand } from './migrate.js';
 import { COMMAND_GROUPS } from '../core/command-groups.js';
 
@@ -71,6 +72,7 @@ export class CommandRegistry {
       'app-unpublish': createAppUnpublishCommand(this.app),
       'app-release': createAppReleaseCommand(this.app),
       'app-rotate-secret': createAppRotateSecretCommand(this.app),
+      'app-replay': createAppReplayCommand(this.app),
       migrate: createMigrateCommand(this.app),
       'storefront-build': createStorefrontBuildCommand(this.app),
       'storefront-dev': createStorefrontDevCommand(this.app),

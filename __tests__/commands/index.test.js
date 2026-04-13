@@ -153,6 +153,15 @@ const mockAppRotateSecretCmd = {
   execute: vi.fn(),
   setApp: vi.fn(),
 };
+const mockAppReplayCmd = {
+  name: 'replay',
+  syntax: 'replay',
+  description:
+    'Replay or list buffered webhook events from the current session',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
 const mockStorefrontBuildCmd = {
   name: 'build',
   description: 'Build Puck configuration',
@@ -232,6 +241,9 @@ vi.mock('../../src/commands/app-release.js', () => ({
 }));
 vi.mock('../../src/commands/app-rotate-secret.js', () => ({
   createAppRotateSecretCommand: vi.fn(() => mockAppRotateSecretCmd),
+}));
+vi.mock('../../src/commands/app-replay.js', () => ({
+  createAppReplayCommand: vi.fn(() => mockAppReplayCmd),
 }));
 vi.mock('../../src/commands/storefront-build.js', () => ({
   createStorefrontBuildCommand: vi.fn(() => mockStorefrontBuildCmd),
@@ -314,6 +326,7 @@ describe('CommandRegistry', () => {
       'app-unpublish',
       'app-release',
       'app-rotate-secret',
+      'app-replay',
       'migrate',
       'storefront-build',
       'storefront-dev',
@@ -339,7 +352,7 @@ describe('CommandRegistry', () => {
     registry = new CommandRegistry(mockApp);
     expect(registry.app).toBe(mockApp);
     // Initialization logic remains the same regarding commands
-    expect(registry.commands.length).toBe(23);
+    expect(registry.commands.length).toBe(24);
   });
 
   describe('registerCommands', () => {
@@ -382,7 +395,7 @@ describe('CommandRegistry', () => {
       expect(storefrontGroupCmd).toBeDefined();
 
       // The action handlers should be set up for all commands
-      expect(Object.keys(registry.commandActions).length).toBe(23);
+      expect(Object.keys(registry.commandActions).length).toBe(24);
       expect(registry.commandActions.configure).toBeDefined();
       expect(registry.commandActions.download).toBeDefined();
       expect(registry.commandActions['sign-in']).toBeDefined();
