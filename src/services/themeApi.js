@@ -1,5 +1,6 @@
 import path from 'path';
 import mime from 'mime-types';
+import { normalizeRemoveOptions } from '../core/concurrent-progress.js';
 /**
  * Theme API service for Finqu CLI
  * Handles all theme-related API operations
@@ -216,33 +217,50 @@ export class ThemeApi {
   /**
    * Removes an asset from the server
    * @param {string} assetKey Asset key
-   * @param {boolean} silent Whether to ignore errors
+   * @param {boolean|Object} silentOrOptions Whether to ignore errors, or options
+   * @param {boolean} [silentOrOptions.quiet] Suppress per-file error logging
+   * @param {boolean} [silentOrOptions.silent] Ignore errors without throwing
+   * @param {Function} [silentOrOptions.onStatus] Status callback for progress UI
    * @returns {Promise<void>} Promise that resolves when asset is removed
    */
-  async removeAsset(assetKey, silent = false) {
+  async removeAsset(assetKey, silentOrOptions = false) {
     if (!this.apiAssetPath) {
       throw new Error('API asset path not set');
+    }
+
+    const { quiet, silent, onStatus } = normalizeRemoveOptions(silentOrOptions);
+
+    if (onStatus) {
+      onStatus(`Deleting asset: ${assetKey}`);
     }
 
     // apiAssetPath already includes the API version
     const url = `${this.apiAssetPath}/assets?asset[key]=${encodeURIComponent(
       assetKey,
     )}`;
-    this.logger.printVerbose(`Removing asset '${assetKey}' from ${url}`);
+    if (!quiet) {
+      this.logger.printVerbose(`Removing asset '${assetKey}' from ${url}`);
+    }
 
     try {
       await this.httpClient.delete(url);
-      this.logger.printVerbose(`Asset '${assetKey}' removal complete`);
+      if (!quiet) {
+        this.logger.printVerbose(`Asset '${assetKey}' removal complete`);
+      }
     } catch (err) {
-      this.logger.printVerbose(`Asset '${assetKey}' removal error!`);
+      if (!quiet) {
+        this.logger.printVerbose(`Asset '${assetKey}' removal error!`);
+      }
 
       if (!silent) {
-        this.logger.printError(`Failed to remove asset '${assetKey}'`);
-        this.logger.printVerbose(
-          `Error details: ${err.message || JSON.stringify(err)}`,
-        );
+        if (!quiet) {
+          this.logger.printError(`Failed to remove asset '${assetKey}'`);
+          this.logger.printVerbose(
+            `Error details: ${err.message || JSON.stringify(err)}`,
+          );
+        }
         throw err;
-      } else {
+      } else if (!quiet) {
         // If silent is true, we just log the error but don't reject
         this.logger.printVerbose(
           `Silently ignoring error for '${assetKey}': ${
@@ -258,20 +276,36 @@ export class ThemeApi {
    * @param {string} assetName Asset name
    * @param {string} filePath Local file path
    * @param {Object} fileSystem File system instance
+   * @param {Object} [options] Transfer options
+   * @param {boolean} [options.quiet] Suppress per-file status/success logs
+   * @param {Function} [options.onStatus] Status callback for progress UI
    * @returns {Promise<boolean>} True if download was successful
    */
-  async downloadAsset(assetName, filePath, fileSystem) {
+  async downloadAsset(assetName, filePath, fileSystem, options = {}) {
     if (!this.apiAssetPath) {
       throw new Error('API asset path not set');
     }
 
-    this.logger.printStatus(`Downloading asset: ${assetName}`);
-    this.logger.printVerbose(`Asset content will be written to ${filePath}`);
+    const quiet = !!options.quiet;
+    const onStatus =
+      typeof options.onStatus === 'function' ? options.onStatus : null;
+
+    const statusMsg = `Downloading asset: ${assetName}`;
+    if (onStatus) {
+      onStatus(statusMsg);
+    } else if (!quiet) {
+      this.logger.printStatus(statusMsg);
+    }
+    if (!quiet) {
+      this.logger.printVerbose(`Asset content will be written to ${filePath}`);
+    }
 
     // Ensure directory exists
     const dirname = path.dirname(filePath);
     if (!(await fileSystem.exists(dirname))) {
-      this.logger.printStatus(`Creating directory: ${dirname}`);
+      if (!quiet) {
+        this.logger.printStatus(`Creating directory: ${dirname}`);
+      }
       await fileSystem.mkdir(dirname, { recursive: true });
     }
 
@@ -320,52 +354,68 @@ export class ThemeApi {
               stream
                 .pipe(file)
                 .on('finish', () => {
-                  this.logger.printSuccess(`Downloaded asset: ${assetName}`);
-                  this.logger.printVerbose(`Asset ${assetName} fetch complete`);
+                  if (!quiet) {
+                    this.logger.printSuccess(`Downloaded asset: ${assetName}`);
+                    this.logger.printVerbose(
+                      `Asset ${assetName} fetch complete`,
+                    );
+                  }
                   resolve(true);
                 })
                 .on('error', (error) => {
                   // Clean up the file if piping fails
                   file.destroy();
-                  this.logger.printError(
-                    `Failed to write asset to file: ${assetName}`,
-                    error,
-                  );
-                  this.logger.printVerbose(`Asset ${assetName} write error!`);
+                  if (!quiet) {
+                    this.logger.printError(
+                      `Failed to write asset to file: ${assetName}`,
+                      error,
+                    );
+                    this.logger.printVerbose(
+                      `Asset ${assetName} write error!`,
+                    );
+                  }
                   reject(error);
                 });
 
               stream.on('error', (error) => {
                 // Clean up the file if the request stream errors
                 file.destroy();
-                this.logger.printError(
-                  `Request stream failed for asset: ${assetName}`,
-                  error,
-                );
+                if (!quiet) {
+                  this.logger.printError(
+                    `Request stream failed for asset: ${assetName}`,
+                    error,
+                  );
+                }
                 reject(error);
               });
             })
             .catch((error) => {
               // Clean up the file if the initial request promise fails
               file.destroy();
-              this.logger.printError(
-                `HTTP request failed for asset: ${assetName}`,
-                error,
-              );
+              if (!quiet) {
+                this.logger.printError(
+                  `HTTP request failed for asset: ${assetName}`,
+                  error,
+                );
+              }
               reject(error);
             });
         });
 
         file.on('error', (error) => {
-          this.logger.printError(
-            `Failed to create write stream for: ${filePath}`,
-            error,
-          );
+          if (!quiet) {
+            this.logger.printError(
+              `Failed to create write stream for: ${filePath}`,
+              error,
+            );
+          }
           reject(error);
         });
       });
     } catch (err) {
-      this.logger.printError('An error occurred while downloading asset', err);
+      if (!quiet) {
+        this.logger.printError('An error occurred while downloading asset', err);
+      }
       throw err;
     }
   }
@@ -375,23 +425,46 @@ export class ThemeApi {
    * @param {string} assetName Asset name
    * @param {string} filePath Local file path
    * @param {Object} fileSystem File system instance
+   * @param {Object} [options] Transfer options
+   * @param {boolean} [options.quiet] Suppress per-file status/success logs
+   * @param {Function} [options.onStatus] Status callback for progress UI
    * @returns {Promise<boolean>} True if upload was successful
    */
-  async uploadAsset(assetName, filePath, fileSystem) {
+  async uploadAsset(assetName, filePath, fileSystem, options = {}) {
     if (!this.apiAssetPath) {
       throw new Error('API asset path not set');
     }
 
-    this.logger.printStatus(`Uploading file: ${assetName}`);
-    this.logger.printVerbose(`Reading file ${assetName} from ${filePath}`);
+    const quiet = !!options.quiet;
+    const onStatus =
+      typeof options.onStatus === 'function' ? options.onStatus : null;
+
+    const emitStatus = (message) => {
+      if (onStatus) {
+        onStatus(message);
+      } else if (!quiet) {
+        if (message.startsWith('Uploading file:')) {
+          this.logger.printStatus(message);
+        } else {
+          this.logger.printInfo(message);
+        }
+      }
+    };
+
+    emitStatus(`Uploading file: ${assetName}`);
+    if (!quiet) {
+      this.logger.printVerbose(`Reading file ${assetName} from ${filePath}`);
+    }
 
     try {
       // Check if file exists and is a file
       const stats = await fileSystem.stat(filePath);
       if (!stats.isFile()) {
-        this.logger.printVerbose(
-          `Asset ${assetName} is directory, skipping sync`,
-        );
+        if (!quiet) {
+          this.logger.printVerbose(
+            `Asset ${assetName} is directory, skipping sync`,
+          );
+        }
         return false;
       }
       // File size check (e.g., 10MB limit)
@@ -403,7 +476,9 @@ export class ThemeApi {
         return false;
       }
     } catch (err) {
-      this.logger.printError(`File not found: ${filePath}`, err);
+      if (!quiet) {
+        this.logger.printError(`File not found: ${filePath}`, err);
+      }
       throw err;
     }
 
@@ -429,12 +504,16 @@ export class ThemeApi {
     ];
     if (!mimeType || textExtensions.includes(ext)) {
       mimeType = 'text/plain';
-      this.logger.printVerbose(`Falling back to text/plain for ${assetName}`);
+      if (!quiet) {
+        this.logger.printVerbose(`Falling back to text/plain for ${assetName}`);
+      }
     }
 
-    this.logger.printVerbose(
-      `Asset ${assetName} MIME-type detected as ${mimeType}`,
-    );
+    if (!quiet) {
+      this.logger.printVerbose(
+        `Asset ${assetName} MIME-type detected as ${mimeType}`,
+      );
+    }
 
     let body = {};
     try {
@@ -445,7 +524,7 @@ export class ThemeApi {
         mimeType.indexOf('application/json') === 0 ||
         mimeType.indexOf('application/xml') === 0
       ) {
-        this.logger.printInfo(`Uploading ${assetName} as a plain text file`);
+        emitStatus(`Uploading ${assetName} as a plain text file`);
 
         const fileContent = await fileSystem.readFile(filePath, 'utf-8');
         body = {
@@ -455,7 +534,7 @@ export class ThemeApi {
           },
         };
       } else {
-        this.logger.printInfo(`Uploading ${assetName} as a binary file`);
+        emitStatus(`Uploading ${assetName} as a binary file`);
 
         const binaryContent = await fileSystem.readFile(filePath, {
           encoding: 'base64',
@@ -468,30 +547,34 @@ export class ThemeApi {
         };
       }
 
-      this.logger.printVerbose(
-        `Uploading asset ${assetName} to ${this.apiAssetPath}/assets`,
-      );
+      if (!quiet) {
+        this.logger.printVerbose(
+          `Uploading asset ${assetName} to ${this.apiAssetPath}/assets`,
+        );
+      }
       await this.httpClient.put(`${this.apiAssetPath}/assets`, body);
-      this.logger.printSuccess(`Uploaded asset: ${assetName}`);
-      this.logger.printVerbose(`Asset ${assetName} upload complete`);
+      if (!quiet) {
+        this.logger.printSuccess(`Uploaded asset: ${assetName}`);
+        this.logger.printVerbose(`Asset ${assetName} upload complete`);
+      }
 
       return true;
     } catch (err) {
-      this.logger.printError(`Failed to upload asset: ${assetName}`, err);
-      this.logger.printVerbose(`Asset ${assetName} upload error!`);
+      if (!quiet) {
+        this.logger.printError(`Failed to upload asset: ${assetName}`, err);
+        this.logger.printVerbose(`Asset ${assetName} upload error!`);
+      }
       throw err;
     }
   }
 }
 
 /**
- * Factory function to create a ThemeAPI serviceng asset ${assetName} to ${this.apiAssetPath}/assets`,
- * @param {Object} httpClient HTTP client );
+ * Factory function to create a ThemeAPI service
+ * @param {Object} httpClient HTTP client
  * @param {Object} tokenManager Token manager
- * @param {Object} logger Logger instance     await this.httpClient.put(`${this.apiAssetPath}/assets`, body);
- * @param {Object} config Configuration object      this.logger.printSuccess(`Uploaded asset: ${assetName}`);
- * @param {string} apiRoot API root URL   this.logger.printVerbose(`Asset ${assetName} upload complete`);
- * @param {string|null} apiAssetPath API asset path (optional)
+ * @param {Object} logger Logger instance
+ * @param {Object} config Configuration object
  * @returns {ThemeApi} A new ThemeAPI instance
  */
 export function createThemeApi(httpClient, tokenManager, logger, config) {

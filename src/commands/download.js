@@ -5,6 +5,10 @@
 import path from 'path';
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
+import {
+  ConcurrentProgress,
+  runWithConcurrency,
+} from '../core/concurrent-progress.js';
 
 // Batch size for parallel downloads
 const BATCH_SIZE = 10;
@@ -60,50 +64,14 @@ export class DownloadCommand extends BaseCommand {
   async execute(sources) {
     try {
       let downloadedCount = 0;
-      let queue = [];
+      const errors = [];
+      const downloadedPaths = [];
       const themeDir = this.config.get('themeDir');
-
-      // Helper function to process a single asset
-      const processAsset = async (assetPath) => {
-        try {
-          this.logger.printVerbose(`Processing asset: ${assetPath}`);
-          const localFilePath = path.join(themeDir, assetPath);
-
-          // Ensure directory exists
-          const dirPath = path.dirname(localFilePath);
-          if (!(await this.fileSystem.exists(dirPath))) {
-            await this.fileSystem.mkdir(dirPath, { recursive: true });
-          }
-
-          // Use the ThemeApi service to download the asset
-          const success = await this.app.services.themeApi.downloadAsset(
-            assetPath,
-            localFilePath,
-            this.fileSystem,
-          );
-
-          if (success) {
-            downloadedCount++;
-          }
-        } catch (e) {
-          // Don't log an error here, let the main error handling take care of it
-          throw e;
-        }
-      };
+      const downloadPaths = [];
 
       if (sources && sources.length) {
-        for (let source of sources) {
-          try {
-            await processAsset(source);
-          } catch (err) {
-            if (err.status === 404) {
-              // For 404 errors, show a clean, concise message
-              this.logger.printError(err.error || `File not found: ${source}`);
-            } else {
-              this.logger.printError(`Failed to download: ${source}`, err);
-            }
-            // Continue with other sources even if one fails
-          }
+        for (const source of sources) {
+          downloadPaths.push(source);
         }
       } else {
         this.logger.printStatus('Downloading all assets from theme...');
@@ -115,16 +83,10 @@ export class DownloadCommand extends BaseCommand {
             return { success: true, downloadedCount: 0 };
           }
 
-          for (let asset of assets) {
+          for (const asset of assets) {
             if (asset.type !== 'dir') {
-              // Only download files
-              if (queue.length >= BATCH_SIZE) {
-                await Promise.all(queue.map((p) => processAsset(p)));
-                queue = [];
-              }
-              queue.push(asset.path);
+              downloadPaths.push(asset.path);
             } else {
-              // Ensure local directory exists
               this.logger.printVerbose(
                 `Ensuring local directory exists for: ${asset.path}`,
               );
@@ -135,31 +97,100 @@ export class DownloadCommand extends BaseCommand {
             }
           }
         } catch (err) {
-          // Handle general asset listing errors
           this.logger.printError('Failed to retrieve assets', err);
           return { success: false, error: err };
         }
       }
 
-      // Process remaining queue
-      if (queue.length > 0) {
+      if (downloadPaths.length > 0) {
+        const progress = new ConcurrentProgress(
+          Math.min(BATCH_SIZE, downloadPaths.length),
+        );
+
+        this.logger.suspendVerbose();
         try {
-          await Promise.all(queue.map((p) => processAsset(p)));
-        } catch (err) {
-          // Individual asset errors were already logged in processAsset
-          this.logger.printError('Some assets failed to download');
+          await runWithConcurrency(
+            downloadPaths,
+            BATCH_SIZE,
+            async (assetPath, slot) => {
+              try {
+                const localFilePath = path.join(themeDir, assetPath);
+
+                const dirPath = path.dirname(localFilePath);
+                if (!(await this.fileSystem.exists(dirPath))) {
+                  await this.fileSystem.mkdir(dirPath, { recursive: true });
+                }
+
+                const success = await this.app.services.themeApi.downloadAsset(
+                  assetPath,
+                  localFilePath,
+                  this.fileSystem,
+                  {
+                    quiet: true,
+                    onStatus: (msg) => progress.update(slot, msg),
+                  },
+                );
+
+                if (success) {
+                  downloadedCount++;
+                  downloadedPaths.push(assetPath);
+                }
+              } catch (e) {
+                if (e.status === 404) {
+                  errors.push({
+                    path: assetPath,
+                    error: e.error || `File not found: ${assetPath}`,
+                  });
+                } else {
+                  errors.push({
+                    path: assetPath,
+                    error: e.message || e.error || e,
+                  });
+                }
+              } finally {
+                progress.finish(slot);
+              }
+            },
+          );
+        } finally {
+          progress.clear();
+          this.logger.resumeVerbose();
         }
+      }
+
+      this.logger.printVerboseList('Downloaded files:', downloadedPaths);
+
+      for (const err of errors) {
+        this.logger.printError(
+          typeof err.error === 'string' && err.error.includes(err.path)
+            ? err.error
+            : `Failed to download: ${err.path}`,
+          typeof err.error === 'string' && err.error.includes(err.path)
+            ? null
+            : err.error,
+        );
+      }
+
+      if (errors.length > 0) {
+        this.logger.printVerboseList(
+          'Failed downloads:',
+          errors.map((e) => `${e.path} (${e.error})`),
+        );
       }
 
       if (downloadedCount > 0) {
         this.logger.printSuccess(
-          `Download complete. ${downloadedCount} assets downloaded.`,
+          `Successfully downloaded ${downloadedCount} files`,
         );
       } else {
         this.logger.printInfo('No assets were downloaded.');
       }
 
-      return { success: true, downloadedCount };
+      return {
+        success: errors.length === 0,
+        downloadedCount,
+        errors,
+      };
     } catch (err) {
       if (err instanceof AppError) {
         this.logger.printError(err.message);

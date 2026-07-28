@@ -5,6 +5,10 @@
 import path from 'path';
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
+import {
+  ConcurrentProgress,
+  runWithConcurrency,
+} from '../core/concurrent-progress.js';
 
 // Batch size for parallel operations
 const BATCH_SIZE = 10;
@@ -67,11 +71,34 @@ export class DeployCommand extends BaseCommand {
   }
 
   /**
+   * Whether a relative path should be skipped for upload
+   * @param {string} relativePath
+   * @param {Object} options
+   * @returns {boolean}
+   * @private
+   */
+  _shouldSkipUpload(relativePath, options) {
+    if (!this.fileSystem.checkPath(relativePath)) {
+      this.logger.printVerbose(`Skipping excluded file: ${relativePath}`);
+      return true;
+    }
+    if (
+      !options.force &&
+      (relativePath === 'config/settings_data.json' ||
+        relativePath.startsWith('.draft/'))
+    ) {
+      this.logger.printVerbose(
+        `Skipping upload of sensitive file: ${relativePath}`,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Execute the deploy command
    * @param {Array<string>} sources Array of source paths to deploy
    * @param {Object} options Command options
-   * @param {string} options.configPath Path to the configuration file (optional)
-   * @param {string} options.version Version to deploy
    * @returns {Promise<Object>} Command result
    */
   async execute(sources, options) {
@@ -80,52 +107,8 @@ export class DeployCommand extends BaseCommand {
     try {
       let deployedCount = 0;
       let removedCount = 0;
-      let uploadQueue = [];
-      let deleteQueue = [];
+      const errors = [];
       const themeDir = this.config.get('themeDir');
-
-      // Helper function to process an upload
-      const processUpload = async (relativePath) => {
-        try {
-          this.logger.printVerbose(`Processing upload: ${relativePath}`);
-          const filePath = path.join(themeDir, relativePath);
-
-          // Use ThemeApi service to upload the asset
-          const success = await this.app.services.themeApi.uploadAsset(
-            relativePath,
-            filePath,
-            this.fileSystem,
-          );
-
-          if (success !== false) {
-            // uploadAsset returns false if skipped
-            deployedCount++;
-          }
-        } catch (e) {
-          this.logger.printError(
-            `Failed to upload asset: ${relativePath}`,
-            e.message || e,
-          );
-          // Continue with other uploads even if one fails
-        }
-      };
-
-      // Helper function to process a delete
-      const processDelete = async (relativePath) => {
-        try {
-          this.logger.printVerbose(`Processing delete: ${relativePath}`);
-
-          // Use ThemeApi service to remove the asset
-          await this.app.services.themeApi.removeAsset(relativePath, true);
-          removedCount++;
-        } catch (e) {
-          this.logger.printError(
-            `Failed to delete remote asset: ${relativePath}`,
-            e.message || e,
-          );
-          // Continue with other deletions even if one fails
-        }
-      };
 
       // --- Clean Phase (if --clean) ---
       if (options.clean) {
@@ -133,15 +116,15 @@ export class DeployCommand extends BaseCommand {
           'Checking for remote theme assets to remove (--clean)...',
         );
 
-        // Use ThemeApi service to get all remote assets
         const remoteAssets = await this.app.services.themeApi.getAssets();
-        const localFiles = await this.fileSystem.getFiles(themeDir); // Use fileSystem
+        const localFiles = await this.fileSystem.getFiles(themeDir);
         const localRelativeFiles = new Set(
           localFiles
             .map((f) => path.relative(themeDir, f))
-            .filter((f) => this.fileSystem.checkPath(f)), // Use fileSystem
+            .filter((f) => this.fileSystem.checkPath(f)),
         );
 
+        const toDelete = [];
         for (const asset of remoteAssets) {
           if (asset.type === 'file' && !localRelativeFiles.has(asset.path)) {
             if (
@@ -154,17 +137,44 @@ export class DeployCommand extends BaseCommand {
               );
               continue;
             }
-            if (deleteQueue.length >= BATCH_SIZE) {
-              await Promise.all(deleteQueue.map((p) => processDelete(p)));
-              deleteQueue = [];
-            }
-            deleteQueue.push(asset.path);
+            toDelete.push(asset.path);
           }
         }
 
-        // Process remaining delete queue
-        if (deleteQueue.length > 0) {
-          await Promise.all(deleteQueue.map((p) => processDelete(p)));
+        if (toDelete.length > 0) {
+          const deletedPaths = [];
+          const deleteProgress = new ConcurrentProgress(
+            Math.min(BATCH_SIZE, toDelete.length),
+          );
+          this.logger.suspendVerbose();
+          try {
+            await runWithConcurrency(
+              toDelete,
+              BATCH_SIZE,
+              async (relativePath, slot) => {
+                try {
+                  await this.app.services.themeApi.removeAsset(relativePath, {
+                    quiet: true,
+                    onStatus: (msg) => deleteProgress.update(slot, msg),
+                  });
+                  removedCount++;
+                  deletedPaths.push(relativePath);
+                } catch (e) {
+                  errors.push({
+                    path: relativePath,
+                    error: e.message || e,
+                    action: 'delete',
+                  });
+                } finally {
+                  deleteProgress.finish(slot);
+                }
+              },
+            );
+          } finally {
+            deleteProgress.clear();
+            this.logger.resumeVerbose();
+          }
+          this.logger.printVerboseList('Removed remote assets:', deletedPaths);
         }
 
         if (removedCount > 0) {
@@ -176,7 +186,9 @@ export class DeployCommand extends BaseCommand {
         }
       }
 
-      // --- Upload Phase ---
+      // --- Collect upload paths ---
+      const uploadPaths = [];
+
       if (sources && sources.length) {
         this.logger.printStatus(
           `Uploading specified assets: ${sources.join(', ')}`,
@@ -193,54 +205,25 @@ export class DeployCommand extends BaseCommand {
               `Local source not found: ${fullPath}`,
               e.message || e,
             );
-            continue; // Skip this source
+            errors.push({
+              path: source,
+              error: e.message || e,
+              action: 'upload',
+            });
+            continue;
           }
 
           if (stats.isFile()) {
-            if (!this.fileSystem.checkPath(source)) {
-              this.logger.printVerbose(`Skipping excluded file: ${source}`);
-              continue;
+            if (!this._shouldSkipUpload(source, options)) {
+              uploadPaths.push(source);
             }
-            if (
-              !options.force &&
-              (source === 'config/settings_data.json' ||
-                source.startsWith('.draft/'))
-            ) {
-              this.logger.printVerbose(
-                `Skipping upload of sensitive file: ${source}`,
-              );
-              continue;
-            }
-            if (uploadQueue.length >= BATCH_SIZE) {
-              await Promise.all(uploadQueue.map((p) => processUpload(p)));
-              uploadQueue = [];
-            }
-            uploadQueue.push(source); // Use relative path
           } else if (stats.isDirectory()) {
-            const dirFiles = await this.fileSystem.getFiles(fullPath); // Use fileSystem
+            const dirFiles = await this.fileSystem.getFiles(fullPath);
             for (const file of dirFiles) {
               const relativePath = path.relative(themeDir, file);
-              if (!this.fileSystem.checkPath(relativePath)) {
-                this.logger.printVerbose(
-                  `Skipping excluded file: ${relativePath}`,
-                );
-                continue;
+              if (!this._shouldSkipUpload(relativePath, options)) {
+                uploadPaths.push(relativePath);
               }
-              if (
-                !options.force &&
-                (relativePath === 'config/settings_data.json' ||
-                  relativePath.startsWith('.draft/'))
-              ) {
-                this.logger.printVerbose(
-                  `Skipping upload of sensitive file: ${relativePath}`,
-                );
-                continue;
-              }
-              if (uploadQueue.length >= BATCH_SIZE) {
-                await Promise.all(uploadQueue.map((p) => processUpload(p)));
-                uploadQueue = [];
-              }
-              uploadQueue.push(relativePath);
             }
           }
         }
@@ -249,43 +232,89 @@ export class DeployCommand extends BaseCommand {
           'Uploading all assets from local theme directory...',
         );
 
-        const allLocalFiles = await this.fileSystem.getFiles(themeDir); // Use fileSystem
+        const allLocalFiles = await this.fileSystem.getFiles(themeDir);
         for (const file of allLocalFiles) {
           const relativePath = path.relative(themeDir, file);
-          if (!this.fileSystem.checkPath(relativePath)) {
-            this.logger.printVerbose(`Skipping excluded file: ${relativePath}`);
-            continue;
+          if (!this._shouldSkipUpload(relativePath, options)) {
+            uploadPaths.push(relativePath);
           }
-          if (
-            !options.force &&
-            (relativePath === 'config/settings_data.json' ||
-              relativePath.startsWith('.draft/'))
-          ) {
-            this.logger.printVerbose(
-              `Skipping upload of sensitive file: ${relativePath}`,
-            );
-            continue;
-          }
-          if (uploadQueue.length >= BATCH_SIZE) {
-            await Promise.all(uploadQueue.map((p) => processUpload(p)));
-            uploadQueue = [];
-          }
-          uploadQueue.push(relativePath);
         }
       }
 
-      // Process remaining upload queue
-      if (uploadQueue.length > 0) {
-        await Promise.all(uploadQueue.map((p) => processUpload(p)));
+      // --- Upload Phase ---
+      const uploadedPaths = [];
+      if (uploadPaths.length > 0) {
+        const uploadProgress = new ConcurrentProgress(
+          Math.min(BATCH_SIZE, uploadPaths.length),
+        );
+        this.logger.suspendVerbose();
+        try {
+          await runWithConcurrency(
+            uploadPaths,
+            BATCH_SIZE,
+            async (relativePath, slot) => {
+              try {
+                const filePath = path.join(themeDir, relativePath);
+
+                const success = await this.app.services.themeApi.uploadAsset(
+                  relativePath,
+                  filePath,
+                  this.fileSystem,
+                  {
+                    quiet: true,
+                    onStatus: (msg) => uploadProgress.update(slot, msg),
+                  },
+                );
+
+                if (success !== false) {
+                  deployedCount++;
+                  uploadedPaths.push(relativePath);
+                }
+              } catch (e) {
+                errors.push({
+                  path: relativePath,
+                  error: e.message || e,
+                  action: 'upload',
+                });
+              } finally {
+                uploadProgress.finish(slot);
+              }
+            },
+          );
+        } finally {
+          uploadProgress.clear();
+          this.logger.resumeVerbose();
+        }
+      }
+
+      this.logger.printVerboseList('Uploaded files:', uploadedPaths);
+
+      // Report transfer errors before compile / final summary
+      for (const err of errors) {
+        if (err.action === 'delete') {
+          this.logger.printError(
+            `Failed to delete remote asset: ${err.path}`,
+            err.error,
+          );
+        } else {
+          this.logger.printError(
+            `Failed to upload asset: ${err.path}`,
+            err.error,
+          );
+        }
+      }
+
+      if (errors.length > 0) {
+        this.logger.printVerboseList(
+          'Failed transfers:',
+          errors.map((e) => `${e.path} (${e.error})`),
+        );
       }
 
       // --- Compile Phase ---
-      // Default to true if options.compile is not explicitly false
       const shouldCompile = options.compile !== false;
       if (shouldCompile && deployedCount > 0) {
-        // Only compile if something was uploaded
         this.logger.printStatus('Compiling assets on theme...');
-        // Use ThemeApi service to compile assets
         await this.app.services.themeApi.compileAssets();
         this.logger.printSuccess('Asset compilation triggered.');
       } else if (shouldCompile && deployedCount === 0) {
@@ -295,12 +324,14 @@ export class DeployCommand extends BaseCommand {
       }
 
       this.logger.printSuccess(
-        `Upload complete. ${deployedCount} assets uploaded.`,
+        `Successfully deployed ${deployedCount} files`,
       );
+
       return {
-        success: true,
+        success: errors.length === 0,
         deployedCount,
         removedCount,
+        errors,
       };
     } catch (err) {
       if (err instanceof AppError) {
