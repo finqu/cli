@@ -15,6 +15,8 @@ export class Logger {
         // Initialize verbose mode to false by default
         this.verbose = false;
         this.seenErrors = new Set(); // Track errors to avoid duplicates
+        // Nested counter: when > 0, printVerbose is suppressed (e.g. during progress UI)
+        this.verboseSuspended = 0;
     }
 
     /**
@@ -31,6 +33,36 @@ export class Logger {
      */
     isVerbose() {
         return this.verbose;
+    }
+
+    /**
+     * Temporarily suppress verbose output (nestable).
+     * Use around concurrent progress UI so HTTP/transfer noise does not break spinners.
+     */
+    suspendVerbose() {
+        this.verboseSuspended += 1;
+    }
+
+    /**
+     * Resume verbose output after suspendVerbose().
+     */
+    resumeVerbose() {
+        this.verboseSuspended = Math.max(0, this.verboseSuspended - 1);
+    }
+
+    /**
+     * Print a verbose result list (paths, skips, etc.) after an operation finishes.
+     * @param {string} title Section title
+     * @param {string[]} items Items to list
+     */
+    printVerboseList(title, items) {
+        if (!this.isVerbose() || this.verboseSuspended > 0 || !items?.length) {
+            return;
+        }
+        console.log(chalk.dim(`  ${title}`));
+        for (const item of items) {
+            console.log(chalk.dim(`    ${item}`));
+        }
     }
 
     /**
@@ -84,7 +116,7 @@ export class Logger {
      * @param {*} data Additional data
      */
     printVerbose(message, data = null) {
-        if (this.isVerbose()) {
+        if (this.isVerbose() && this.verboseSuspended === 0) {
             // Print the message first
             console.log(chalk.dim(`  ${message}`));
 

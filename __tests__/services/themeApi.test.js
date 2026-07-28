@@ -574,6 +574,24 @@ describe('src/services/themeApi.js', () => {
         expect.stringContaining('removal error!'),
       );
     });
+
+    it('should call onStatus and suppress error logs when quiet', async () => {
+      setupThemeApi();
+      const onStatus = vi.fn();
+      mockLogger.printError.mockClear();
+
+      await expect(
+        themeApi.removeAsset('assets/fail_delete.css', {
+          quiet: true,
+          onStatus,
+        }),
+      ).rejects.toMatchObject({ status: 500 });
+
+      expect(onStatus).toHaveBeenCalledWith(
+        'Deleting asset: assets/fail_delete.css',
+      );
+      expect(mockLogger.printError).not.toHaveBeenCalled();
+    });
   });
 
   describe('downloadAsset()', () => {
@@ -917,6 +935,43 @@ describe('src/services/themeApi.js', () => {
         expect.stringContaining(`Failed to upload asset: ${failAssetName}`),
         expect.objectContaining({ status: 500 }),
       );
+    });
+
+    it('should suppress status logs in quiet mode and call onStatus', async () => {
+      const onStatus = vi.fn();
+      mockLogger.printStatus.mockClear();
+      mockLogger.printInfo.mockClear();
+      mockLogger.printSuccess.mockClear();
+
+      const result = await themeApi.uploadAsset(
+        assetName,
+        filePath,
+        mockFileSystem,
+        { quiet: true, onStatus },
+      );
+
+      expect(result).toBe(true);
+      expect(mockLogger.printStatus).not.toHaveBeenCalled();
+      expect(mockLogger.printInfo).not.toHaveBeenCalled();
+      expect(mockLogger.printSuccess).not.toHaveBeenCalled();
+      expect(onStatus).toHaveBeenCalledWith(`Uploading file: ${assetName}`);
+      expect(onStatus).toHaveBeenCalledWith(
+        `Uploading ${assetName} as a plain text file`,
+      );
+    });
+
+    it('should not print upload errors when quiet and upload fails', async () => {
+      const failAssetName = 'layout/fail_upload.liquid';
+      const failFilePath = '/path/to/fail.liquid';
+      mockLogger.printError.mockClear();
+
+      await expect(
+        themeApi.uploadAsset(failAssetName, failFilePath, mockFileSystem, {
+          quiet: true,
+        }),
+      ).rejects.toMatchObject({ status: 500 });
+
+      expect(mockLogger.printError).not.toHaveBeenCalled();
     });
   });
 });

@@ -182,6 +182,50 @@ describe('Logger', () => {
       // Second call for the error details - exact format may vary based on how dim() affects spacing
       expect(consoleLogSpy).toHaveBeenCalledTimes(2);
     });
+
+    test('should suppress verbose output while suspended', () => {
+      logger.setVerbose(true);
+      logger.suspendVerbose();
+      logger.printVerbose('Hidden during progress');
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+
+      logger.resumeVerbose();
+      logger.printVerbose('Visible again');
+      expect(consoleLogSpy).toHaveBeenCalledWith('  Visible again');
+    });
+
+    test('should nest suspendVerbose calls', () => {
+      logger.setVerbose(true);
+      logger.suspendVerbose();
+      logger.suspendVerbose();
+      logger.resumeVerbose();
+      logger.printVerbose('Still hidden');
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+      logger.resumeVerbose();
+      logger.printVerbose('Now visible');
+      expect(consoleLogSpy).toHaveBeenCalledWith('  Now visible');
+    });
+  });
+
+  describe('printVerboseList', () => {
+    test('should print a titled list in verbose mode', () => {
+      logger.setVerbose(true);
+      logger.printVerboseList('Uploaded files:', ['a.js', 'b.js']);
+
+      expect(consoleLogSpy).toHaveBeenCalledWith('  Uploaded files:');
+      expect(consoleLogSpy).toHaveBeenCalledWith('    a.js');
+      expect(consoleLogSpy).toHaveBeenCalledWith('    b.js');
+    });
+
+    test('should not print when verbose is disabled or list is empty', () => {
+      logger.setVerbose(false);
+      logger.printVerboseList('Uploaded files:', ['a.js']);
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+
+      logger.setVerbose(true);
+      logger.printVerboseList('Uploaded files:', []);
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('printSuccess', () => {

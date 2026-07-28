@@ -33,6 +33,9 @@ describe('DeployCommand', () => {
       printSuccess: vi.fn(),
       printError: vi.fn(),
       printVerbose: vi.fn(),
+      printVerboseList: vi.fn(),
+      suspendVerbose: vi.fn(),
+      resumeVerbose: vi.fn(),
       handleError: vi.fn(),
     };
 
@@ -127,15 +130,17 @@ describe('DeployCommand', () => {
         source,
         fullPath,
         mockFileSystem,
+        expect.objectContaining({ quiet: true }),
       );
       expect(mockThemeApi.compileAssets).toHaveBeenCalled();
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
-        expect.stringContaining('1 assets uploaded'),
+        'Successfully deployed 1 files',
       );
       expect(result).toEqual({
         success: true,
         deployedCount: 1,
         removedCount: 0,
+        errors: [],
       });
     });
 
@@ -155,17 +160,19 @@ describe('DeployCommand', () => {
           source,
           fullPath,
           mockFileSystem,
+          expect.objectContaining({ quiet: true }),
         );
       });
 
       expect(mockThemeApi.compileAssets).toHaveBeenCalled();
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
-        expect.stringContaining('3 assets uploaded'),
+        'Successfully deployed 3 files',
       );
       expect(result).toEqual({
         success: true,
         deployedCount: 3,
         removedCount: 0,
+        errors: [],
       });
     });
 
@@ -210,6 +217,7 @@ describe('DeployCommand', () => {
         'templates/index.liquid',
         path.join('/path/to/theme', 'templates/index.liquid'),
         mockFileSystem,
+        expect.objectContaining({ quiet: true }),
       );
       expect(mockLogger.printVerbose).toHaveBeenCalledWith(
         expect.stringContaining('Skipping upload of sensitive file'),
@@ -252,6 +260,7 @@ describe('DeployCommand', () => {
         'templates/index.liquid',
         path.join('/path/to/theme', 'templates/index.liquid'),
         mockFileSystem,
+        expect.objectContaining({ quiet: true }),
       );
       expect(mockLogger.printVerbose).toHaveBeenCalledWith(
         expect.stringContaining('Skipping excluded file'),
@@ -331,11 +340,11 @@ describe('DeployCommand', () => {
       expect(mockThemeApi.removeAsset).toHaveBeenCalledTimes(2);
       expect(mockThemeApi.removeAsset).toHaveBeenCalledWith(
         'templates/old-template.liquid',
-        true,
+        expect.objectContaining({ quiet: true }),
       );
       expect(mockThemeApi.removeAsset).toHaveBeenCalledWith(
         'assets/old-asset.css',
-        true,
+        expect.objectContaining({ quiet: true }),
       );
       expect(result.removedCount).toBe(2);
     });
@@ -422,6 +431,8 @@ describe('DeployCommand', () => {
         expect.any(String),
       );
       expect(result.deployedCount).toBe(0);
+      expect(result.success).toBe(false);
+      expect(result.errors).toHaveLength(1);
     });
 
     it('should handle upload errors and continue with other files', async () => {
@@ -443,6 +454,8 @@ describe('DeployCommand', () => {
       expect(mockThemeApi.uploadAsset).toHaveBeenCalledTimes(3);
       // Should have 2 successful uploads
       expect(result.deployedCount).toBe(2);
+      expect(result.success).toBe(false);
+      expect(result.errors).toHaveLength(1);
     });
 
     it('should handle clean errors and continue', async () => {
@@ -471,6 +484,7 @@ describe('DeployCommand', () => {
       expect(mockThemeApi.removeAsset).toHaveBeenCalledTimes(2);
       // Should have 1 successful removal
       expect(result.removedCount).toBe(1);
+      expect(result.success).toBe(false);
     });
 
     it('should handle compilation errors', async () => {

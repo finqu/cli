@@ -31,6 +31,9 @@ describe('DownloadCommand', () => {
       printSuccess: vi.fn(),
       printError: vi.fn(),
       printVerbose: vi.fn(),
+      printVerboseList: vi.fn(),
+      suspendVerbose: vi.fn(),
+      resumeVerbose: vi.fn(),
       handleError: vi.fn(),
     };
 
@@ -103,13 +106,15 @@ describe('DownloadCommand', () => {
         source,
         localPath,
         mockFileSystem,
+        expect.objectContaining({ quiet: true }),
       );
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
-        expect.stringContaining('1 assets downloaded'),
+        'Successfully downloaded 1 files',
       );
       expect(result).toEqual({
         success: true,
         downloadedCount: 1,
+        errors: [],
       });
     });
 
@@ -129,15 +134,17 @@ describe('DownloadCommand', () => {
           source,
           localPath,
           mockFileSystem,
+          expect.objectContaining({ quiet: true }),
         );
       });
 
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
-        expect.stringContaining('3 assets downloaded'),
+        'Successfully downloaded 3 files',
       );
       expect(result).toEqual({
         success: true,
         downloadedCount: 3,
+        errors: [],
       });
     });
 
@@ -163,8 +170,10 @@ describe('DownloadCommand', () => {
 
       expect(mockLogger.printError).toHaveBeenCalledWith(
         expect.stringMatching(/file not found/i),
+        null,
       );
       expect(result.downloadedCount).toBe(0);
+      expect(result.success).toBe(false);
     });
 
     it('should handle other download errors and continue', async () => {
@@ -181,12 +190,13 @@ describe('DownloadCommand', () => {
 
       expect(mockLogger.printError).toHaveBeenCalledWith(
         expect.stringContaining('Failed to download'),
-        error,
+        'Download failed',
       );
       // Should have tried to download all files
       expect(mockThemeApi.downloadAsset).toHaveBeenCalledTimes(3);
       // Should have 2 successful downloads
       expect(result.downloadedCount).toBe(2);
+      expect(result.success).toBe(false);
     });
   });
 

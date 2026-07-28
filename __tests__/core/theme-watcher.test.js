@@ -67,6 +67,9 @@ describe('ThemeWatcher', () => {
       printSuccess: vi.fn(),
       printError: vi.fn(),
       printVerbose: vi.fn(),
+      printVerboseList: vi.fn(),
+      suspendVerbose: vi.fn(),
+      resumeVerbose: vi.fn(),
     };
 
     // Create watcher instance with short debounce delay for faster tests
@@ -325,7 +328,7 @@ describe('ThemeWatcher', () => {
       // API calls should be made
       expect(mockThemeApi.removeAsset).toHaveBeenCalledWith(
         'templates/deleted.liquid',
-        true,
+        { quiet: true, silent: true },
       );
       expect(mockThemeApi.uploadAsset).toHaveBeenCalledTimes(2);
       expect(mockThemeApi.compileAssets).toHaveBeenCalled();

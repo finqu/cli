@@ -59,50 +59,67 @@ export class ThemeWatcher {
       this.deleteQueue.clear();
 
       let processedCount = 0;
+      const uploadedPaths = [];
+      const deletedPaths = [];
 
-      // Process deletions first
-      if (deletes.length > 0) {
-        this.logger.printStatus(
-          `Removing ${deletes.length} deleted file(s)...`,
-        );
-        const deletePromises = deletes.map((relativePath) =>
-          this.themeApi
-            .removeAsset(relativePath, true) // silent = true
-            .then(() => processedCount++)
-            .catch((e) =>
-              this.logger.printError(
-                `Failed to remove ${relativePath}`,
-                e.message || e,
+      this.logger.suspendVerbose();
+      try {
+        // Process deletions first
+        if (deletes.length > 0) {
+          this.logger.printStatus(
+            `Removing ${deletes.length} deleted file(s)...`,
+          );
+          const deletePromises = deletes.map((relativePath) =>
+            this.themeApi
+              .removeAsset(relativePath, { quiet: true, silent: true })
+              .then(() => {
+                processedCount++;
+                deletedPaths.push(relativePath);
+              })
+              .catch((e) =>
+                this.logger.printError(
+                  `Failed to remove ${relativePath}`,
+                  e.message || e,
+                ),
               ),
-            ),
-        );
-        await Promise.all(deletePromises);
+          );
+          await Promise.all(deletePromises);
+        }
+
+        // Process uploads/updates
+        if (uploads.length > 0) {
+          this.logger.printStatus(
+            `Uploading ${uploads.length} changed file(s)...`,
+          );
+          const uploadPromises = uploads.map((relativePath) =>
+            this.themeApi
+              .uploadAsset(
+                relativePath,
+                path.join(this.themeDir, relativePath),
+                this.fileSystem,
+                { quiet: true },
+              )
+              .then((success) => {
+                if (success !== false) {
+                  processedCount++;
+                  uploadedPaths.push(relativePath);
+                }
+              })
+              .catch((e) =>
+                this.logger.printError(
+                  `Failed to upload ${relativePath}`,
+                  e.message || e,
+                ),
+              ),
+          );
+          await Promise.all(uploadPromises);
+        }
+      } finally {
+        this.logger.resumeVerbose();
       }
 
-      // Process uploads/updates
-      if (uploads.length > 0) {
-        this.logger.printStatus(
-          `Uploading ${uploads.length} changed file(s)...`,
-        );
-        const uploadPromises = uploads.map((relativePath) =>
-          this.themeApi
-            .uploadAsset(
-              relativePath,
-              path.join(this.themeDir, relativePath),
-              this.fileSystem,
-            )
-            .then((success) => {
-              if (success !== false) processedCount++;
-            })
-            .catch((e) =>
-              this.logger.printError(
-                `Failed to upload ${relativePath}`,
-                e.message || e,
-              ),
-            ),
-        );
-        await Promise.all(uploadPromises);
-      }
+      this.logger.printVerboseList('Removed files:', deletedPaths);
+      this.logger.printVerboseList('Uploaded files:', uploadedPaths);
 
       // Compile if any changes were processed
       if (processedCount > 0) {

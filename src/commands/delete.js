@@ -4,6 +4,13 @@
  */
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
+import {
+  ConcurrentProgress,
+  runWithConcurrency,
+} from '../core/concurrent-progress.js';
+
+// Batch size for parallel operations
+const BATCH_SIZE = 10;
 
 /**
  * DeleteCommand class for removing theme assets from server
@@ -69,51 +76,68 @@ export class DeleteCommand extends BaseCommand {
     }
 
     try {
-      // Batch size for parallel operations
-      const BATCH_SIZE = 10;
-      let queue = [];
       let deletedCount = 0;
+      const errors = [];
+      const deletedPaths = [];
 
+      const progress = new ConcurrentProgress(
+        Math.min(BATCH_SIZE, sources.length),
+      );
+
+      this.logger.suspendVerbose();
       try {
-        for (let source of sources) {
-          this.logger.printStatus(`Deleting asset '${source}'...`);
-
-          if (queue.length === BATCH_SIZE) {
-            await Promise.all(queue);
-            queue = [];
+        await runWithConcurrency(sources, BATCH_SIZE, async (source, slot) => {
+          try {
+            await this.app.services.themeApi.removeAsset(source, {
+              quiet: true,
+              onStatus: (msg) => progress.update(slot, msg),
+            });
+            deletedCount++;
+            deletedPaths.push(source);
+          } catch (e) {
+            errors.push({
+              path: source,
+              error: e.message || e,
+            });
+          } finally {
+            progress.finish(slot);
           }
-
-          queue.push(
-            this.app.services.themeApi.removeAsset(source).then(() => {
-              deletedCount++;
-            }),
-          );
-        }
-
-        if (queue.length) {
-          await Promise.all(queue);
-        }
-
-        // Default to true if options.compile is not explicitly false
-        const shouldCompile = options.compile !== false;
-
-        if (shouldCompile && deletedCount > 0) {
-          this.logger.printStatus('Compiling assets on theme...');
-          await this.app.services.themeApi.compileAssets();
-          this.logger.printSuccess('Asset compilation triggered.');
-        } else if (shouldCompile && deletedCount === 0) {
-          this.logger.printInfo('No assets deleted, skipping compilation.');
-        } else {
-          this.logger.printInfo('Asset compilation skipped (--no-compile).');
-        }
-
-        this.logger.printSuccess(
-          `Delete complete. ${deletedCount} assets deleted.`,
-        );
-        return { success: true, deletedCount };
-      } catch (err) {
-        return { success: false, error: err };
+        });
+      } finally {
+        progress.clear();
+        this.logger.resumeVerbose();
       }
+
+      this.logger.printVerboseList('Deleted files:', deletedPaths);
+
+      for (const err of errors) {
+        this.logger.printError(
+          `Failed to remove asset '${err.path}'`,
+          err.error,
+        );
+      }
+
+      if (errors.length > 0) {
+        this.logger.printVerboseList(
+          'Failed deletions:',
+          errors.map((e) => `${e.path} (${e.error})`),
+        );
+      }
+
+      const shouldCompile = options.compile !== false;
+
+      if (shouldCompile && deletedCount > 0) {
+        this.logger.printStatus('Compiling assets on theme...');
+        await this.app.services.themeApi.compileAssets();
+        this.logger.printSuccess('Asset compilation triggered.');
+      } else if (shouldCompile && deletedCount === 0) {
+        this.logger.printInfo('No assets deleted, skipping compilation.');
+      } else {
+        this.logger.printInfo('Asset compilation skipped (--no-compile).');
+      }
+
+      this.logger.printSuccess(`Successfully deleted ${deletedCount} files`);
+      return { success: errors.length === 0, deletedCount, errors };
     } catch (err) {
       if (err instanceof AppError) {
         this.logger.printError(err.message);

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "finqu-rest-api": {
+      "source": "finqu/skills",
+      "sourceType": "github",
+      "skillPath": "skills/finqu-rest-api/SKILL.md",
+      "computedHash": "28f0b3e4d9e36fcbce14c59614bbd8d6f278aa18ff3ff3a7b10fdeaf6231da5f"
+    }
+  }
+}
