@@ -76,7 +76,7 @@ describe('createApp', () => {
         // Provide default values for common config keys
         if (key === 'accessToken') return 'test-token';
         if (key === 'resourceUrl') return 'https://api.example.com';
-        if (key === 'apiVersion') return '1.2';
+        if (key === 'apiVersion') return '3.2';
         return defaultValue !== undefined ? defaultValue : null;
       }),
       set: vi.fn(),

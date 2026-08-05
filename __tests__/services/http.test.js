@@ -163,7 +163,7 @@ describe('HttpClient', () => {
         .spyOn(httpClient, 'request')
         .mockResolvedValue({ data: 'test delete' });
 
-      // Call the method
+      // Call the method with legacy options signature
       const result = await httpClient.delete('https://test.com/api', {
         timeout: 5000,
       });
@@ -177,6 +177,23 @@ describe('HttpClient', () => {
 
       // Verify the result
       expect(result).toEqual({ data: 'test delete' });
+    });
+
+    test('delete should send JSON body when provided', async () => {
+      const requestSpy = vi
+        .spyOn(httpClient, 'request')
+        .mockResolvedValue(null);
+
+      const result = await httpClient.delete('https://test.com/api', {
+        key: 'assets/main.css',
+      });
+
+      expect(requestSpy).toHaveBeenCalledWith({
+        url: 'https://test.com/api',
+        method: 'DELETE',
+        body: { key: 'assets/main.css' },
+      });
+      expect(result).toBeNull();
     });
   });
 

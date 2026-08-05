@@ -7,6 +7,26 @@ import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
 
 /**
+ * Derive a storefront domain hostname from channel urls[].base.
+ * @param {Array<{base?: string}>|undefined} urls Channel URL entries
+ * @returns {string|null} Hostname or null when unavailable
+ */
+function channelDomainFromUrls(urls) {
+  const base = Array.isArray(urls) && urls[0] ? urls[0].base : null;
+  if (!base || typeof base !== 'string') {
+    return null;
+  }
+
+  try {
+    return new URL(base).hostname || null;
+  } catch {
+    // Accept bare hostnames without a scheme
+    const trimmed = base.replace(/^\/\//, '').split('/')[0];
+    return trimmed || null;
+  }
+}
+
+/**
  * ConfigureCommand class for setting up theme configuration
  */
 export class ConfigureCommand extends BaseCommand {
@@ -216,7 +236,7 @@ export class ConfigureCommand extends BaseCommand {
           id: selectedStore.id,
           themeId: selectedTheme,
           versionId: selectedVersion,
-          domain: selectedStore.technical_domain,
+          domain: channelDomainFromUrls(selectedStore.urls),
         },
         true,
       );

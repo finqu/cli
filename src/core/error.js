@@ -4,6 +4,80 @@
  */
 
 /**
+ * Format an error value into a human-readable message.
+ * Handles Error instances, API-style objects ({ status, error, error_description }),
+ * nested object `error` fields, and plain strings.
+ *
+ * @param {*} err Error value
+ * @param {Object} [options]
+ * @param {boolean} [options.compact=false] Single-line output (for lists)
+ * @returns {string} Formatted message (may be empty)
+ */
+export function formatErrorMessage(err, options = {}) {
+  const compact = !!options.compact;
+
+  if (err == null || err === '') {
+    return '';
+  }
+
+  if (typeof err === 'string') {
+    return err;
+  }
+
+  if (err instanceof Error) {
+    return err.message || err.name || 'Unknown error';
+  }
+
+  if (typeof err !== 'object') {
+    return String(err);
+  }
+
+  const stringify = (value) => {
+    try {
+      return compact ? JSON.stringify(value) : JSON.stringify(value, null, 2);
+    } catch {
+      return compact ? '[Complex Object]' : '[Complex Object]';
+    }
+  };
+
+  const parts = [];
+
+  if (err.status != null) {
+    parts.push(`HTTP ${err.status}`);
+  }
+
+  if (typeof err.error_description === 'string' && err.error_description) {
+    parts.push(err.error_description);
+  } else if (typeof err.error === 'string' && err.error) {
+    parts.push(err.error);
+  } else if (err.error != null && typeof err.error === 'object') {
+    parts.push(stringify(err.error));
+  } else if (typeof err.message === 'string' && err.message) {
+    parts.push(err.message);
+  } else if (parts.length === 0) {
+    // Unknown object shape — show the whole thing
+    return stringify(err);
+  }
+
+  if (compact) {
+    return parts.join(': ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Prefer description/message on its own line after the status when both exist
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  const [first, ...rest] = parts;
+  // If the rest is already multi-line JSON, keep newlines
+  const detail = rest.join('\n');
+  if (detail.includes('\n')) {
+    return `${first}:\n${detail}`;
+  }
+  return `${first}: ${detail}`;
+}
+
+/**
  * Application-specific error class with error codes and details
  */
 export class AppError extends Error {

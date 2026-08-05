@@ -519,7 +519,7 @@ Finqu CLI uses a `.env` file (default: `.env` in current directory) to store set
 ```env
 FINQU_THEME_DIR=/path/to/theme/directory
 FINQU_RESOURCE_URL=https://<your-env>.api.myfinqu.com
-FINQU_API_VERSION=1.2
+FINQU_API_VERSION=3.2
 FINQU_ACCESS_TOKEN=<oauth_access_token>
 FINQU_REFRESH_TOKEN=<oauth_refresh_token>
 FINQU_EXPIRES_AT=1784447850458
@@ -536,7 +536,7 @@ FINQU_STORE_DOMAIN=example.finqustore.com
 | ----------------- | ------------------------- | --------------------------------------------------------- |
 | `themeDir`        | `FINQU_THEME_DIR`         | Local directory path for theme files                      |
 | `resourceUrl`     | `FINQU_RESOURCE_URL`      | Finqu API base URL (set by `finqu sign-in`)               |
-| `apiVersion`      | `FINQU_API_VERSION`       | Finqu API version (optional, default: `1.2`)              |
+| `apiVersion`      | `FINQU_API_VERSION`       | Finqu API version (optional, default: `3.2`)              |
 | `accessToken`     | `FINQU_ACCESS_TOKEN`      | OAuth 2.0 access token (automatically managed)            |
 | `refreshToken`    | `FINQU_REFRESH_TOKEN`     | OAuth 2.0 refresh token (automatically managed)           |
 | `expiresAt`       | `FINQU_EXPIRES_AT`        | Access token expiration timestamp (automatically managed) |

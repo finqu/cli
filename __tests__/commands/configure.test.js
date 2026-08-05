@@ -193,7 +193,7 @@ describe('ConfigureCommand', () => {
       id: 'store-123',
       merchant_name: 'Test Merchant',
       name: 'Test Store',
-      technical_domain: 'test-store.com',
+      urls: [{ base: 'https://test-store.com' }],
     };
 
     beforeEach(() => {
