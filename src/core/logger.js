@@ -3,6 +3,7 @@
  * Handles all console output with color formatting and verbosity control
  */
 import chalk from 'chalk';
+import { formatErrorMessage } from './error.js';
 
 /**
  * Logger class with configurable verbosity
@@ -131,12 +132,11 @@ export class Logger {
                 }
                 // For response data, simplify the output
                 else if (message.includes('successful') || message.includes('failed')) {
-                    // For errors, show minimal info
-                    if (typeof data === 'object' && (data.error || data.status)) {
-                        const status = data.status ? `Status: ${data.status}` : '';
-                        const error = data.error ? `Error: ${data.error}` : '';
-                        if (status || error) {
-                            console.log(chalk.dim(`  ${status} ${error}`.trim()));
+                    // For errors, show a readable summary (avoids "[object Object]")
+                    if (typeof data === 'object' && (data.error || data.status || data.error_description)) {
+                        const summary = formatErrorMessage(data, { compact: true });
+                        if (summary) {
+                            console.log(chalk.dim(`  ${summary}`));
                         }
                     }
                 }
@@ -190,7 +190,16 @@ export class Logger {
      */
     printError(message, err = null) {
         // Create an error signature to avoid duplicates
-        const signature = `${message}:${err ? err.message || JSON.stringify(err) : ''}`;
+        let signatureDetail = '';
+        try {
+            signatureDetail = err
+                ? formatErrorMessage(err, { compact: true }) ||
+                  (typeof err === 'object' ? JSON.stringify(err) : String(err))
+                : '';
+        } catch {
+            signatureDetail = String(err);
+        }
+        const signature = `${message}:${signatureDetail}`;
 
         if (this.seenErrors.has(signature)) {
             return; // Skip duplicate errors
@@ -201,35 +210,18 @@ export class Logger {
         console.error(chalk.red('✖ ') + message);
 
         // Show error details only if meaningful and not redundant
-        if (err) {
-            if (typeof err === 'object') {
-                // For API errors with a specific structure
-                if (err.error && typeof err.error === 'string') {
-                    // Don't repeat the error message if it's already part of the main message
-                    if (!message.includes(err.error)) {
-                        console.error(chalk.dim(`  ${err.error}`));
-                    }
-                }
-                // For standard Error objects
-                else if (err.message && typeof err.message === 'string') {
-                    // Don't repeat the error message if it's already part of the main message
-                    if (!message.includes(err.message)) {
-                        console.error(chalk.dim(`  ${err.message}`));
-                    }
-                }
-                // For other object errors
-                else if (this.isVerbose()) {
-                    // In verbose mode, show a simplified version of the error object
-                    const simplifiedErr = this._safeStringify(err).split('\n').slice(0, 3).join('\n');
-                    if (simplifiedErr.length > 0 && simplifiedErr !== '{}') {
-                        console.error(chalk.dim(`  ${simplifiedErr}${simplifiedErr.length > 120 ? '...' : ''}`));
-                    }
-                }
-            }
-            // For string errors
-            else if (typeof err === 'string' && !message.includes(err)) {
-                console.error(chalk.dim(`  ${err}`));
-            }
+        if (err == null || err === '') {
+            return;
+        }
+
+        const detail = formatErrorMessage(err);
+        if (!detail || message.includes(detail)) {
+            return;
+        }
+
+        // Indent each line of multi-line details (e.g. nested JSON from the API)
+        for (const line of detail.split('\n')) {
+            console.error(chalk.dim(`  ${line}`));
         }
     }
 

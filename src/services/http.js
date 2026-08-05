@@ -54,11 +54,44 @@ export class HttpClient {
   /**
    * Make a DELETE request
    * @param {string} url URL to request
-   * @param {Object} options Request options
+   * @param {Object} [dataOrOptions] Request body, or legacy options when no body is sent
+   * @param {Object} [options] Request options when a body is provided
    * @returns {Promise<Object>} Response data
    */
-  async delete(url, options = {}) {
-    return this.request({ url, method: 'DELETE', ...options });
+  async delete(url, dataOrOptions, options) {
+    // Legacy: delete(url) or delete(url, options)
+    // New: delete(url, body) or delete(url, body, options)
+    if (arguments.length < 2) {
+      return this.request({ url, method: 'DELETE' });
+    }
+
+    if (arguments.length === 2) {
+      const value = dataOrOptions;
+      const looksLikeOptions =
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        ('timeout' in value ||
+          'headers' in value ||
+          'json' in value ||
+          'stream' in value ||
+          'forever' in value ||
+          'gzip' in value) &&
+        !('key' in value);
+
+      if (looksLikeOptions) {
+        return this.request({ url, method: 'DELETE', ...value });
+      }
+
+      return this.request({ url, method: 'DELETE', body: value });
+    }
+
+    return this.request({
+      url,
+      method: 'DELETE',
+      ...(dataOrOptions !== undefined ? { body: dataOrOptions } : {}),
+      ...(options || {}),
+    });
   }
 
   /**

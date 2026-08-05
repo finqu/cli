@@ -322,7 +322,30 @@ describe('Logger', () => {
       logger.printError('Request failed', apiError);
 
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, '✖ Request failed');
-      expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, '  Invalid input');
+      expect(consoleErrorSpy).toHaveBeenNthCalledWith(
+        2,
+        '  Missing required field',
+      );
+    });
+
+    test('should print nested object API errors in full', () => {
+      logger.setVerbose(false);
+      const apiError = {
+        status: 400,
+        error: { message: 'Liquid syntax error', line: 12 },
+      };
+      logger.printError('Failed to upload asset: foo.liquid', apiError);
+
+      expect(consoleErrorSpy).toHaveBeenNthCalledWith(
+        1,
+        '✖ Failed to upload asset: foo.liquid',
+      );
+      expect(consoleErrorSpy.mock.calls.slice(1).map((c) => c[0]).join('\n')).toContain(
+        'Liquid syntax error',
+      );
+      expect(consoleErrorSpy.mock.calls.slice(1).map((c) => c[0]).join('\n')).toContain(
+        'HTTP 400',
+      );
     });
 
     test('should not log duplicate errors', () => {

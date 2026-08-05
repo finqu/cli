@@ -24,7 +24,7 @@ export class ThemeApi {
     this.config = config;
     this.apiRoot = config.get('resourceUrl');
     // Get API version from config or use default
-    this.apiVersion = config.get('apiVersion', '1.2');
+    this.apiVersion = config.get('apiVersion', '3.2');
 
     if (!this.apiRoot) {
       logger.printError('API root URL not configured');
@@ -37,8 +37,6 @@ export class ThemeApi {
       this.apiAssetPath = [
         this.apiRoot,
         this.apiVersion,
-        'merchants',
-        this.config.get('store').merchantId,
         'channels',
         this.config.get('store').id,
         'themes',
@@ -86,16 +84,16 @@ export class ThemeApi {
 
   /**
    * Lists themes for a specific store
-   * @param {string} merchantId Merchant ID
+   * @param {string} _merchantId Merchant ID (unused; merchant is implied by API host)
    * @param {Object} store Store object
    * @returns {Promise<Array>} List of themes
    */
-  async listThemes(merchantId, store) {
+  async listThemes(_merchantId, store) {
     if (!store) {
       throw new Error('Store is required to list themes');
     }
 
-    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels/${store.id}/themes`;
+    const endpoint = `${this.getApiBase()}/channels/${store.id}/themes`;
     this.logger.printVerbose(`Fetching store themes from ${endpoint}`);
 
     try {
@@ -108,13 +106,13 @@ export class ThemeApi {
 
   /**
    * Lists available versions for a specific theme within a store
-   * @param {string} merchantId Merchant ID
+   * @param {string} _merchantId Merchant ID (unused; merchant is implied by API host)
    * @param {Object} store Store object
    * @param {string} themeId Theme ID
    * @returns {Promise<Array>} List of theme versions
    */
-  async listVersions(merchantId, store, themeId) {
-    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels/${store.id}/themes/${themeId}/versions`;
+  async listVersions(_merchantId, store, themeId) {
+    const endpoint = `${this.getApiBase()}/channels/${store.id}/themes/${themeId}/versions`;
     this.logger.printVerbose(`Fetching theme versions from ${endpoint}`);
 
     try {
@@ -127,11 +125,11 @@ export class ThemeApi {
 
   /**
    * Lists stores accessible by the developer
-   * @param {string} merchantId Merchant ID
+   * @param {string} [_merchantId] Merchant ID (unused; merchant is implied by API host)
    * @returns {Promise<Array>} List of stores
    */
-  async listStores(merchantId) {
-    const endpoint = `${this.getApiBase()}/merchants/${merchantId}/channels`;
+  async listStores(_merchantId) {
+    const endpoint = `${this.getApiBase()}/channels`;
     this.logger.printVerbose(`Fetching accessible stores from ${endpoint}`);
 
     try {
@@ -156,6 +154,7 @@ export class ThemeApi {
 
     if (assetKey) {
       const assetKeyParam = encodeURIComponent(`${assetKey}`);
+      // API expects nested query param asset[key] (OpenAPI flat "key" is incorrect)
       endpoint += `?asset[key]=${assetKeyParam}`;
       this.logger.printVerbose(
         `Fetching asset list for key '${assetKey}' from ${endpoint}`,
@@ -235,6 +234,7 @@ export class ThemeApi {
     }
 
     // apiAssetPath already includes the API version
+    // API expects nested query param asset[key] (OpenAPI JSON body is incorrect)
     const url = `${this.apiAssetPath}/assets?asset[key]=${encodeURIComponent(
       assetKey,
     )}`;
@@ -527,6 +527,7 @@ export class ThemeApi {
         emitStatus(`Uploading ${assetName} as a plain text file`);
 
         const fileContent = await fileSystem.readFile(filePath, 'utf-8');
+        // API expects nested asset object (OpenAPI flat schema is incorrect)
         body = {
           asset: {
             key: assetName,

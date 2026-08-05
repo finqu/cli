@@ -43,7 +43,7 @@ const mockConfig = {
   reset: () => {
     mockConfig._config = {
       resourceUrl: 'http://api.test.com',
-      apiVersion: '1.2',
+      apiVersion: '3.2',
       store: {
         merchantId: 'merchant-123',
         id: 'channel-456',
@@ -92,22 +92,22 @@ const handlers = [
 
   // List Themes (Store)
   http.get(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes',
+    'http://api.test.com/3.2/channels/channel-456/themes',
     () => HttpResponse.json([{ id: 'store-theme-1', name: 'Store Theme 1' }]),
   ),
   // List Stores
-  http.get('http://api.test.com/1.2/merchants/:merchantId/channels', () =>
+  http.get('http://api.test.com/3.2/channels', () =>
     HttpResponse.json([{ id: 'store-1', name: 'Store 1' }]),
   ),
   // List Versions
   http.get(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions',
+    'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions',
     () => HttpResponse.json([{ id: 'v1', name: 'Version 1' }]),
   ),
 
   // --- Store Assets ---
   http.get(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets',
+    'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets',
     ({ request }) => {
       const url = new URL(request.url);
       const key = url.searchParams.get('asset[key]');
@@ -144,7 +144,7 @@ const handlers = [
     },
   ),
   http.put(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets',
+    'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets',
     async ({ request }) => {
       const body = await request.json();
       if (body?.asset?.key === 'layout/fail_upload.liquid') {
@@ -160,7 +160,7 @@ const handlers = [
     },
   ),
   http.delete(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets',
+    'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets',
     ({ request }) => {
       const url = new URL(request.url);
       const key = url.searchParams.get('asset[key]');
@@ -177,7 +177,7 @@ const handlers = [
     },
   ),
   http.put(
-    'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets/compile',
+    'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets/compile',
     () => HttpResponse.json({ message: 'Compilation triggered' }),
   ),
 ];
@@ -298,11 +298,11 @@ describe('src/services/themeApi.js', () => {
     it('should initialize with store config and set correct paths', () => {
       setupThemeApi();
       expect(themeApi.apiRoot).toBe('http://api.test.com');
-      expect(themeApi.apiVersion).toBe('1.2');
+      expect(themeApi.apiVersion).toBe('3.2');
       expect(themeApi.apiAssetPath).toBe(
-        'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc',
+        'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc',
       );
-      expect(themeApi.getApiBase()).toBe('http://api.test.com/1.2');
+      expect(themeApi.getApiBase()).toBe('http://api.test.com/3.2');
     });
 
     it('should allow setting apiAssetPath, apiRoot, apiVersion', () => {
@@ -349,7 +349,7 @@ describe('src/services/themeApi.js', () => {
     it('should handle errors during listThemes', async () => {
       server.use(
         http.get(
-          'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes',
+          'http://api.test.com/3.2/channels/channel-456/themes',
           () => HttpResponse.json({ error: 'Server Error' }, { status: 500 }),
         ),
       );
@@ -380,7 +380,7 @@ describe('src/services/themeApi.js', () => {
     it('should handle errors during listStores', async () => {
       server.use(
         http.get(
-          'http://api.test.com/1.2/merchants/merchant-123/channels',
+          'http://api.test.com/3.2/channels',
           () => HttpResponse.json({ error: 'Server Error' }, { status: 500 }),
         ),
       );
@@ -413,7 +413,7 @@ describe('src/services/themeApi.js', () => {
     it('should handle errors during listVersions', async () => {
       server.use(
         http.get(
-          'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions',
+          'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions',
           () =>
             HttpResponse.json(
               { error: 'Version List Failed' },
@@ -477,7 +477,7 @@ describe('src/services/themeApi.js', () => {
     it('should handle general errors during getAssets list', async () => {
       server.use(
         http.get(
-          'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets',
+          'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets',
           () => HttpResponse.json({ error: 'List Failed' }, { status: 500 }),
         ),
       );
@@ -509,7 +509,7 @@ describe('src/services/themeApi.js', () => {
     it('should handle errors during compileAssets', async () => {
       server.use(
         http.put(
-          'http://api.test.com/1.2/merchants/merchant-123/channels/channel-456/themes/theme-789/versions/version-abc/assets/compile',
+          'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions/version-abc/assets/compile',
           () => HttpResponse.json({ error: 'Compile Failed' }, { status: 500 }),
         ),
       );

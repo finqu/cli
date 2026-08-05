@@ -4,7 +4,7 @@
  */
 import path from 'path';
 import { BaseCommand } from './base.js';
-import { AppError } from '../core/error.js';
+import { AppError, formatErrorMessage } from '../core/error.js';
 import {
   ConcurrentProgress,
   runWithConcurrency,
@@ -307,7 +307,10 @@ export class DeployCommand extends BaseCommand {
       if (errors.length > 0) {
         this.logger.printVerboseList(
           'Failed transfers:',
-          errors.map((e) => `${e.path} (${e.error})`),
+          errors.map((e) => {
+            const detail = formatErrorMessage(e.error, { compact: true });
+            return detail ? `${e.path} (${detail})` : e.path;
+          }),
         );
       }
 

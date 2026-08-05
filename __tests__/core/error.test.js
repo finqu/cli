@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { AppError } from '../../src/core/error.js';
+import { AppError, formatErrorMessage } from '../../src/core/error.js';
 
 describe('AppError', () => {
   describe('constructor', () => {
@@ -24,6 +24,49 @@ describe('AppError', () => {
 
       expect(error.stack).toBeDefined();
       expect(error.stack).toContain('AppError');
+    });
+  });
+
+  describe('formatErrorMessage', () => {
+    test('should format string and Error values', () => {
+      expect(formatErrorMessage('plain')).toBe('plain');
+      expect(formatErrorMessage(new Error('boom'))).toBe('boom');
+      expect(formatErrorMessage(null)).toBe('');
+    });
+
+    test('should prefer error_description for API errors', () => {
+      expect(
+        formatErrorMessage({
+          status: 400,
+          error: 'invalid_request',
+          error_description: 'Missing required field',
+        }),
+      ).toBe('HTTP 400: Missing required field');
+    });
+
+    test('should stringify nested object error fields', () => {
+      const message = formatErrorMessage({
+        status: 400,
+        error: { message: 'Liquid syntax error', line: 12 },
+      });
+
+      expect(message).toContain('HTTP 400');
+      expect(message).toContain('Liquid syntax error');
+      expect(message).toContain('"line": 12');
+    });
+
+    test('should produce compact single-line output', () => {
+      const message = formatErrorMessage(
+        {
+          status: 400,
+          error: { message: 'bad template' },
+        },
+        { compact: true },
+      );
+
+      expect(message).toContain('HTTP 400');
+      expect(message).toContain('bad template');
+      expect(message).not.toContain('\n');
     });
   });
 
