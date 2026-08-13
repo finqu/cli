@@ -9,6 +9,11 @@ import {
   ConcurrentProgress,
   runWithConcurrency,
 } from '../core/concurrent-progress.js';
+import {
+  SETTINGS_DATA_PATH,
+  pullSettingsData,
+  syncPublicAssets,
+} from '../services/themeSync.js';
 
 // Batch size for parallel operations
 const BATCH_SIZE = 10;
@@ -60,8 +65,18 @@ export class DeployCommand extends BaseCommand {
         description: 'Remove remote theme assets not found locally',
       },
       {
-        flags: '--force',
-        description: 'Include restricted paths like config/ and .draft',
+        flags: '--config-push',
+        description: 'Upload local config/settings_data.json to the theme',
+      },
+      {
+        flags: '--config-pull',
+        description:
+          'Download remote config/settings_data.json before and after deploy',
+      },
+      {
+        flags: '--assets-pull',
+        description:
+          'After compile, download compiled public/ assets to local',
       },
       {
         flags: '--no-compile',
@@ -82,13 +97,43 @@ export class DeployCommand extends BaseCommand {
       this.logger.printVerbose(`Skipping excluded file: ${relativePath}`);
       return true;
     }
+    if (relativePath.startsWith('.draft/')) {
+      this.logger.printVerbose(
+        `Skipping upload of sensitive file: ${relativePath}`,
+      );
+      return true;
+    }
     if (
-      !options.force &&
-      (relativePath === 'config/settings_data.json' ||
-        relativePath.startsWith('.draft/'))
+      relativePath === SETTINGS_DATA_PATH &&
+      !options.configPush
     ) {
       this.logger.printVerbose(
         `Skipping upload of sensitive file: ${relativePath}`,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a remote path should be skipped during --clean
+   * @param {string} assetPath
+   * @returns {boolean}
+   * @private
+   */
+  _shouldSkipClean(assetPath) {
+    if (assetPath === 'public' || assetPath.startsWith('public/')) {
+      this.logger.printVerbose(
+        `Skipping deletion of compiled remote file: ${assetPath}`,
+      );
+      return true;
+    }
+    if (
+      assetPath === SETTINGS_DATA_PATH ||
+      assetPath.startsWith('.draft/')
+    ) {
+      this.logger.printVerbose(
+        `Skipping deletion of sensitive remote file: ${assetPath}`,
       );
       return true;
     }
@@ -107,8 +152,21 @@ export class DeployCommand extends BaseCommand {
     try {
       let deployedCount = 0;
       let removedCount = 0;
+      let compiled = false;
       const errors = [];
       const themeDir = this.config.get('themeDir');
+      const themeApi = this.app.services.themeApi;
+
+      // --- Pre-pull settings (if --config-pull without --config-push) ---
+      // Skip pre-pull when pushing so local settings are not overwritten first.
+      if (options.configPull && !options.configPush) {
+        await pullSettingsData({
+          themeApi,
+          fileSystem: this.fileSystem,
+          themeDir,
+          logger: this.logger,
+        });
+      }
 
       // --- Clean Phase (if --clean) ---
       if (options.clean) {
@@ -116,7 +174,7 @@ export class DeployCommand extends BaseCommand {
           'Checking for remote theme assets to remove (--clean)...',
         );
 
-        const remoteAssets = await this.app.services.themeApi.getAssets();
+        const remoteAssets = await themeApi.getAssets();
         const localFiles = await this.fileSystem.getFiles(themeDir);
         const localRelativeFiles = new Set(
           localFiles
@@ -127,14 +185,7 @@ export class DeployCommand extends BaseCommand {
         const toDelete = [];
         for (const asset of remoteAssets) {
           if (asset.type === 'file' && !localRelativeFiles.has(asset.path)) {
-            if (
-              !options.force &&
-              (asset.path === 'config/settings_data.json' ||
-                asset.path.startsWith('.draft/'))
-            ) {
-              this.logger.printVerbose(
-                `Skipping deletion of sensitive remote file: ${asset.path}`,
-              );
+            if (this._shouldSkipClean(asset.path)) {
               continue;
             }
             toDelete.push(asset.path);
@@ -153,7 +204,7 @@ export class DeployCommand extends BaseCommand {
               BATCH_SIZE,
               async (relativePath, slot) => {
                 try {
-                  await this.app.services.themeApi.removeAsset(relativePath, {
+                  await themeApi.removeAsset(relativePath, {
                     quiet: true,
                     onStatus: (msg) => deleteProgress.update(slot, msg),
                   });
@@ -241,6 +292,21 @@ export class DeployCommand extends BaseCommand {
         }
       }
 
+      // With --config-push, always include settings_data when present locally
+      if (options.configPush && !uploadPaths.includes(SETTINGS_DATA_PATH)) {
+        const settingsPath = path.join(themeDir, SETTINGS_DATA_PATH);
+        if (await this.fileSystem.exists(settingsPath)) {
+          uploadPaths.push(SETTINGS_DATA_PATH);
+          this.logger.printVerbose(
+            `Including ${SETTINGS_DATA_PATH} (--config-push)`,
+          );
+        } else {
+          this.logger.printInfo(
+            `Local ${SETTINGS_DATA_PATH} not found; nothing to push.`,
+          );
+        }
+      }
+
       // --- Upload Phase ---
       const uploadedPaths = [];
       if (uploadPaths.length > 0) {
@@ -256,7 +322,7 @@ export class DeployCommand extends BaseCommand {
               try {
                 const filePath = path.join(themeDir, relativePath);
 
-                const success = await this.app.services.themeApi.uploadAsset(
+                const success = await themeApi.uploadAsset(
                   relativePath,
                   filePath,
                   this.fileSystem,
@@ -318,12 +384,44 @@ export class DeployCommand extends BaseCommand {
       const shouldCompile = options.compile !== false;
       if (shouldCompile && deployedCount > 0) {
         this.logger.printStatus('Compiling assets on theme...');
-        await this.app.services.themeApi.compileAssets();
+        await themeApi.compileAssets();
         this.logger.printSuccess('Asset compilation triggered.');
+        compiled = true;
       } else if (shouldCompile && deployedCount === 0) {
         this.logger.printInfo('No assets uploaded, skipping compilation.');
       } else {
         this.logger.printInfo('Asset compilation skipped (--no-compile).');
+      }
+
+      // --- Post-pull settings (if --config-pull) ---
+      if (options.configPull) {
+        await pullSettingsData({
+          themeApi,
+          fileSystem: this.fileSystem,
+          themeDir,
+          logger: this.logger,
+        });
+      }
+
+      // --- Pull compiled assets (if --assets-pull and compiled) ---
+      if (options.assetsPull && compiled) {
+        const syncResult = await syncPublicAssets({
+          themeApi,
+          fileSystem: this.fileSystem,
+          themeDir,
+          logger: this.logger,
+        });
+        for (const err of syncResult.errors) {
+          errors.push({
+            path: err.path,
+            error: err.error,
+            action: 'sync',
+          });
+        }
+      } else if (options.assetsPull && !compiled) {
+        this.logger.printInfo(
+          'Compiled public/ pull skipped (assets were not compiled).',
+        );
       }
 
       this.logger.printSuccess(

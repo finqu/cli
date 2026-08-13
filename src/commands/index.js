@@ -8,6 +8,7 @@ import { createSignInCommand } from './sign-in.js';
 import { createDownloadCommand } from './download.js';
 import { createDeployCommand } from './deploy.js';
 import { createDeleteCommand } from './delete.js';
+import { createListCommand } from './list.js';
 import { createWatchCommand } from './watch.js';
 import { createStorefrontBuildCommand } from './storefront-build.js';
 import { createStorefrontDevCommand } from './storefront-dev.js';
@@ -58,6 +59,7 @@ export class CommandRegistry {
       download: createDownloadCommand(this.app),
       deploy: createDeployCommand(this.app),
       delete: createDeleteCommand(this.app),
+      list: createListCommand(this.app),
       watch: createWatchCommand(this.app),
       'theme-dev': createThemeDevCommand(this.app),
       'app-listen': createAppListenCommand(this.app),

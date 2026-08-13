@@ -43,6 +43,14 @@ const mockDeleteCmd = {
   execute: vi.fn(),
   setApp: vi.fn(),
 };
+const mockListCmd = {
+  name: 'list',
+  syntax: 'list [dir]',
+  description: 'List files in the connected Finqu theme',
+  group: 'theme',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
 const mockWatchCmd = {
   name: 'watch',
   description: 'Watch theme',
@@ -200,6 +208,9 @@ vi.mock('../../src/commands/deploy.js', () => ({
 vi.mock('../../src/commands/delete.js', () => ({
   createDeleteCommand: vi.fn(() => mockDeleteCmd),
 }));
+vi.mock('../../src/commands/list.js', () => ({
+  createListCommand: vi.fn(() => mockListCmd),
+}));
 vi.mock('../../src/commands/watch.js', () => ({
   createWatchCommand: vi.fn(() => mockWatchCmd),
 }));
@@ -312,6 +323,7 @@ describe('CommandRegistry', () => {
       'download',
       'deploy',
       'delete',
+      'list',
       'watch',
       'theme-dev',
       'app-listen',
@@ -352,7 +364,7 @@ describe('CommandRegistry', () => {
     registry = new CommandRegistry(mockApp);
     expect(registry.app).toBe(mockApp);
     // Initialization logic remains the same regarding commands
-    expect(registry.commands.length).toBe(24);
+    expect(registry.commands.length).toBe(25);
   });
 
   describe('registerCommands', () => {
@@ -395,7 +407,7 @@ describe('CommandRegistry', () => {
       expect(storefrontGroupCmd).toBeDefined();
 
       // The action handlers should be set up for all commands
-      expect(Object.keys(registry.commandActions).length).toBe(24);
+      expect(Object.keys(registry.commandActions).length).toBe(25);
       expect(registry.commandActions.configure).toBeDefined();
       expect(registry.commandActions.download).toBeDefined();
       expect(registry.commandActions['sign-in']).toBeDefined();
