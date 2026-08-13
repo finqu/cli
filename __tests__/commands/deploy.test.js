@@ -24,6 +24,7 @@ describe('DeployCommand', () => {
       removeAsset: vi.fn().mockResolvedValue(undefined),
       compileAssets: vi.fn().mockResolvedValue(undefined),
       getAssets: vi.fn().mockResolvedValue([]),
+      downloadAsset: vi.fn().mockResolvedValue(true),
     };
 
     // Create mock logger
@@ -47,6 +48,9 @@ describe('DeployCommand', () => {
       }),
       getFiles: vi.fn().mockResolvedValue([]),
       checkPath: vi.fn().mockReturnValue(true),
+      exists: vi.fn().mockResolvedValue(false),
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      unlink: vi.fn().mockResolvedValue(undefined),
     };
 
     // Create mock config
@@ -91,21 +95,28 @@ describe('DeployCommand', () => {
 
     it('should have the correct options', () => {
       const options = command.options;
-      expect(options).toHaveLength(3);
+      expect(options).toHaveLength(5);
 
-      // Check --clean option
       expect(options).toContainEqual({
         flags: '--clean',
         description: expect.stringContaining('Remove remote'),
       });
 
-      // Check --force option
       expect(options).toContainEqual({
-        flags: '--force',
-        description: expect.stringContaining('Include restricted paths'),
+        flags: '--config-push',
+        description: expect.stringContaining('settings_data.json'),
       });
 
-      // Check --no-compile option
+      expect(options).toContainEqual({
+        flags: '--config-pull',
+        description: expect.stringContaining('settings_data.json'),
+      });
+
+      expect(options).toContainEqual({
+        flags: '--assets-pull',
+        description: expect.stringContaining('public/'),
+      });
+
       expect(options).toContainEqual({
         flags: '--no-compile',
         description: expect.stringContaining('Skip asset compilation'),
@@ -225,20 +236,6 @@ describe('DeployCommand', () => {
       expect(result.deployedCount).toBe(1);
     });
 
-    it('should upload sensitive files with --force option', async () => {
-      const sources = [
-        'config/settings_data.json',
-        '.draft/settings_data.json',
-        'templates/index.liquid',
-      ];
-
-      const result = await command.execute(sources, { force: true });
-
-      // All files should be uploaded with --force
-      expect(mockThemeApi.uploadAsset).toHaveBeenCalledTimes(3);
-      expect(result.deployedCount).toBe(3);
-    });
-
     it('should skip excluded paths', async () => {
       const sources = [
         'node_modules/package/index.js',
@@ -349,7 +346,7 @@ describe('DeployCommand', () => {
       expect(result.removedCount).toBe(2);
     });
 
-    it('should not clean sensitive files by default', async () => {
+    it('should not clean sensitive files', async () => {
       // Set up remote assets including sensitive files
       const remoteAssets = [
         { type: 'file', path: 'templates/index.liquid' },
@@ -373,25 +370,147 @@ describe('DeployCommand', () => {
       expect(result.removedCount).toBe(0);
     });
 
-    it('should clean sensitive files when using --clean and --force', async () => {
-      // Set up remote assets including sensitive files
+    it('should never clean remote public/ assets', async () => {
       const remoteAssets = [
-        { type: 'file', path: 'templates/index.liquid' },
-        { type: 'file', path: 'config/settings_data.json' }, // Sensitive
-        { type: 'file', path: '.draft/test.liquid' }, // Sensitive
+        { type: 'file', path: 'templates/old.liquid' },
+        { type: 'file', path: 'public/main.abc123.css' },
+        { type: 'file', path: 'public/js/app.def456.js' },
       ];
       mockThemeApi.getAssets.mockResolvedValueOnce(remoteAssets);
+      mockFileSystem.getFiles.mockResolvedValueOnce([
+        '/path/to/theme/templates/index.liquid',
+      ]);
 
-      // Set up local files (missing the remote assets)
-      const localFiles = ['/path/to/theme/templates/index.liquid'];
-      mockFileSystem.getFiles.mockResolvedValueOnce(localFiles);
+      const result = await command.execute([], { clean: true });
 
-      // Execute with --clean and --force flags
-      const result = await command.execute([], { clean: true, force: true });
+      expect(mockThemeApi.removeAsset).toHaveBeenCalledTimes(1);
+      expect(mockThemeApi.removeAsset).toHaveBeenCalledWith(
+        'templates/old.liquid',
+        expect.objectContaining({ quiet: true }),
+      );
+      expect(mockLogger.printVerbose).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping deletion of compiled remote file'),
+      );
+      expect(result.removedCount).toBe(1);
+    });
+  });
 
-      // Should try to remove sensitive files
-      expect(mockThemeApi.removeAsset).toHaveBeenCalledTimes(2);
-      expect(result.removedCount).toBe(2);
+  describe('--config-push / --config-pull / --assets-pull', () => {
+    it('should pull settings before and after with --config-pull and public with --assets-pull', async () => {
+      mockThemeApi.getAssets.mockResolvedValueOnce([
+        { type: 'file', path: 'public/main.abc123.css' },
+      ]);
+      mockFileSystem.exists.mockResolvedValue(true);
+      mockFileSystem.getFiles.mockResolvedValueOnce([]);
+
+      const result = await command.execute(['templates/index.liquid'], {
+        configPull: true,
+        assetsPull: true,
+      });
+
+      expect(
+        mockThemeApi.downloadAsset.mock.calls.filter(
+          (c) => c[0] === 'config/settings_data.json',
+        ),
+      ).toHaveLength(2);
+      expect(mockThemeApi.compileAssets).toHaveBeenCalled();
+      expect(mockThemeApi.downloadAsset).toHaveBeenCalledWith(
+        'public/main.abc123.css',
+        path.join('/path/to/theme', 'public/main.abc123.css'),
+        mockFileSystem,
+        expect.objectContaining({ quiet: true }),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should not pull settings or public without the flags', async () => {
+      await command.execute(['templates/index.liquid'], {});
+
+      expect(mockThemeApi.downloadAsset).not.toHaveBeenCalled();
+    });
+
+    it('should pull settings but skip public with --config-pull and --no-compile', async () => {
+      await command.execute(['templates/index.liquid'], {
+        configPull: true,
+        assetsPull: true,
+        compile: false,
+      });
+
+      expect(
+        mockThemeApi.downloadAsset.mock.calls.filter(
+          (c) => c[0] === 'config/settings_data.json',
+        ),
+      ).toHaveLength(2);
+      expect(mockThemeApi.compileAssets).not.toHaveBeenCalled();
+      expect(
+        mockThemeApi.downloadAsset.mock.calls.some((c) =>
+          String(c[0]).startsWith('public/'),
+        ),
+      ).toBe(false);
+      expect(mockLogger.printInfo).toHaveBeenCalledWith(
+        expect.stringContaining('Compiled public/ pull skipped'),
+      );
+    });
+
+    it('should upload settings_data.json with --config-push', async () => {
+      mockFileSystem.exists.mockResolvedValue(true);
+
+      const result = await command.execute(['templates/index.liquid'], {
+        configPush: true,
+      });
+
+      expect(mockThemeApi.uploadAsset).toHaveBeenCalledWith(
+        'config/settings_data.json',
+        path.join('/path/to/theme', 'config/settings_data.json'),
+        mockFileSystem,
+        expect.objectContaining({ quiet: true }),
+      );
+      expect(mockThemeApi.uploadAsset).toHaveBeenCalledWith(
+        'templates/index.liquid',
+        path.join('/path/to/theme', 'templates/index.liquid'),
+        mockFileSystem,
+        expect.objectContaining({ quiet: true }),
+      );
+      expect(result.deployedCount).toBe(2);
+    });
+
+    it('should not pre-pull settings when --config-push and --config-pull are both set', async () => {
+      mockFileSystem.exists.mockResolvedValue(true);
+
+      await command.execute(['templates/index.liquid'], {
+        configPush: true,
+        configPull: true,
+      });
+
+      // Only post-pull (once), not pre-pull
+      expect(
+        mockThemeApi.downloadAsset.mock.calls.filter(
+          (c) => c[0] === 'config/settings_data.json',
+        ),
+      ).toHaveLength(1);
+      expect(mockThemeApi.uploadAsset).toHaveBeenCalledWith(
+        'config/settings_data.json',
+        expect.any(String),
+        mockFileSystem,
+        expect.objectContaining({ quiet: true }),
+      );
+    });
+
+    it('should still skip .draft/ even with --config-push', async () => {
+      mockFileSystem.exists.mockResolvedValue(false);
+
+      await command.execute(
+        ['.draft/settings_data.json', 'templates/index.liquid'],
+        { configPush: true },
+      );
+
+      expect(mockThemeApi.uploadAsset).toHaveBeenCalledTimes(1);
+      expect(mockThemeApi.uploadAsset).toHaveBeenCalledWith(
+        'templates/index.liquid',
+        expect.any(String),
+        mockFileSystem,
+        expect.objectContaining({ quiet: true }),
+      );
     });
   });
 

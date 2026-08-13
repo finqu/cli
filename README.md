@@ -329,6 +329,20 @@ finqu theme download [sources...]
 
 When no sources are specified, all theme assets will be downloaded to your local directory.
 
+#### list
+
+List files in the connected Finqu theme:
+
+```bash
+finqu theme list [dir]
+```
+
+| Option  | Description                                                     |
+| ------- | --------------------------------------------------------------- |
+| `[dir]` | Optional directory to list; nested files are listed recursively |
+
+Prints remote theme paths one per line, sorted, with directories marked by a trailing `/`. When no directory is given, all theme assets are listed.
+
 #### deploy
 
 Upload local theme assets to the connected Finqu theme:
@@ -337,16 +351,18 @@ Upload local theme assets to the connected Finqu theme:
 finqu theme deploy [sources...]
 ```
 
-| Option         | Description                                                  |
-| -------------- | ------------------------------------------------------------ |
-| `--clean`      | Remove remote theme assets not found locally                 |
-| `--force`      | Include restricted paths like config/ and .draft directories |
-| `--no-compile` | Skip asset compilation on the server after upload            |
-| `[sources...]` | Optional file paths to deploy specific files or directories  |
+| Option           | Description                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `--clean`        | Remove remote theme assets not found locally (never removes `public/` compiled assets)         |
+| `--config-push`  | Upload local `config/settings_data.json` to the theme                                            |
+| `--config-pull`  | Download remote `config/settings_data.json` before and after deploy                              |
+| `--assets-pull`  | After compile, download compiled `public/` assets (and prune stale local hashed files)         |
+| `--no-compile`   | Skip asset compilation on the server after upload                                                |
+| `[sources...]`   | Optional file paths to deploy specific files or directories                                        |
 
 When no sources are specified, all local theme assets will be uploaded.
 
-> **Note:** By default, the `config/settings_data.json` file and `config/.draft` directory are protected and will not be uploaded to prevent accidental overwrites of theme settings made in the backend theme editor. Use the `--force` option to include it if necessary.
+> **Note:** By default, `config/settings_data.json` and the `.draft/` directory are not uploaded, to avoid overwriting theme settings from the backend theme editor. Use `--config-pull` / `--config-push` for settings, and `--assets-pull` for compiled `public/` assets. When both `--config-push` and `--config-pull` are set, settings are pushed first (no pre-pull overwrite), then pulled after deploy.
 
 #### delete
 

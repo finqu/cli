@@ -88,6 +88,15 @@ export class FileSystem {
   }
 
   /**
+   * Deletes a file
+   * @param {string} filePath Path to delete
+   * @returns {Promise<void>} Promise that resolves when complete
+   */
+  async unlink(filePath) {
+    return fs.unlink(filePath);
+  }
+
+  /**
    * Checks if a path should be included in theme
    * @param {string} filePath File path to check
    * @returns {boolean} Whether path should be included
