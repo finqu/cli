@@ -298,6 +298,46 @@ finqu app replay --topic orders/create
 finqu app replay --url http://localhost:4000/hooks --index 1
 ```
 
+#### dev
+
+Expose an app running on localhost through a public HTTPS tunnel, and point the draft app at it while the command runs:
+
+```bash
+finqu app dev
+```
+
+| Option                | Description                                                   | Default  |
+| --------------------- | ------------------------------------------------------------- | -------- |
+| `-p, --port <number>` | Local port your app listens on                                | detected |
+| `--app-id <id>`       | App ID (uses linked app if omitted)                           |          |
+| `--tunnel-url <url>`  | Use your own HTTPS tunnel (ngrok, etc.) instead of Cloudflare |          |
+
+**Finding your app's port.** Without `--port`, the CLI looks for a dev server already running from the current directory or one of its subdirectories (this uses `lsof` on macOS and `ss` on Linux). If several are running, you choose one. If none is running, it uses a port set with `-p`/`--port`/`PORT=` in the `dev` script of `package.json`, then the framework's default port (Next.js 3000, Vite 5173, Astro 4321), then 3000.
+
+**Framework config.** Next.js and Vite block requests from hosts they don't recognise, so a tunnel URL gets a 403 until it is allowed. When the CLI detects one of these frameworks, it offers to add a wildcard entry to the config:
+
+| Framework                                      | File            | Entry added                                        |
+| ---------------------------------------------- | --------------- | -------------------------------------------------- |
+| Next.js                                        | `next.config.*` | `allowedDevOrigins: ['*.trycloudflare.com']`       |
+| Vite (also SvelteKit, Remix and React Router)  | `vite.config.*` | `server: { allowedHosts: ['.trycloudflare.com'] }` |
+
+The entry is permanent and keeps working when the tunnel URL changes. Both frameworks restart their dev server on their own when the config changes. For Nuxt, Astro, config shapes the CLI doesn't recognise, or non-interactive runs, it prints the line to add instead.
+
+By default this starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) (`https://<random>.trycloudflare.com`), which needs no Cloudflare account. If `cloudflared` is not on your `PATH`, the CLI downloads it to `~/.finqu/bin` on first use and checks it against the release's SHA256 checksum.
+
+While the tunnel is up:
+
+- The app's `http.base_uri` points at the tunnel URL.
+- Tunnel versions of any `localhost` redirect URIs are added next to the existing ones.
+
+Press Ctrl+C to restore the original values. If the CLI is killed before it can restore them, the original values stay saved in `.finqu-dev-session.json` and are restored the next time you run `finqu app dev`.
+
+Notes:
+
+- Only draft apps can be used. The command refuses to modify a published app, so live merchants are never pointed at your machine.
+- The tunnel URL changes on every run, and anyone who knows it can reach your app. Verify the `Finqu-Signature` header on incoming requests.
+- Quick Tunnels are a Cloudflare testing service with no uptime guarantee. If you hit problems, use `--tunnel-url` with another tunnel.
+
 ### Theme Commands
 
 All theme-related commands are grouped under `finqu theme`:

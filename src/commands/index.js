@@ -15,6 +15,7 @@ import { createStorefrontDevCommand } from './storefront-dev.js';
 import { createStorefrontCreateCommand } from './storefront-create.js';
 import { createThemeDevCommand } from './theme-dev.js';
 import { createAppListenCommand } from './app-listen.js';
+import { createAppDevCommand } from './app-dev.js';
 import { createAppLinkCommand } from './app-link.js';
 import { createAppListCommand } from './app-list.js';
 import { createAppInfoCommand } from './app-info.js';
@@ -63,6 +64,7 @@ export class CommandRegistry {
       watch: createWatchCommand(this.app),
       'theme-dev': createThemeDevCommand(this.app),
       'app-listen': createAppListenCommand(this.app),
+      'app-dev': createAppDevCommand(this.app),
       'app-link': createAppLinkCommand(this.app),
       'app-list': createAppListCommand(this.app),
       'app-info': createAppInfoCommand(this.app),

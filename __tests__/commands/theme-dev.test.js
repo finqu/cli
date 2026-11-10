@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   ThemeDevCommand,
   createThemeDevCommand,
+  resolveStoreDomain,
+  serveSpawnEnv,
 } from '../../src/commands/theme-dev.js';
 
 // Mock child_process
@@ -41,6 +43,7 @@ describe('ThemeDevCommand', () => {
     mockConfig = {
       get: vi.fn((key) => {
         if (key === 'themeDir') return '/path/to/theme';
+        if (key === 'storeDomain') return null;
         return null;
       }),
     };
@@ -84,6 +87,52 @@ describe('ThemeDevCommand', () => {
       const factoryCommand = createThemeDevCommand(mockApp);
       expect(factoryCommand).toBeInstanceOf(ThemeDevCommand);
       expect(factoryCommand.app).toBe(mockApp);
+    });
+  });
+
+  describe('resolveStoreDomain()', () => {
+    it('should read storeDomain from config', () => {
+      expect(
+        resolveStoreDomain({
+          get: (key) => (key === 'storeDomain' ? 'shop.example.com' : null),
+        }),
+      ).toBe('shop.example.com');
+    });
+
+    it('should fall back to store.domain', () => {
+      expect(
+        resolveStoreDomain({
+          get: (key) =>
+            key === 'store' ? { domain: 'from-store.example.com' } : null,
+        }),
+      ).toBe('from-store.example.com');
+    });
+
+    it('should return empty string when unset', () => {
+      expect(resolveStoreDomain({ get: () => null })).toBe('');
+      expect(resolveStoreDomain(null)).toBe('');
+    });
+  });
+
+  describe('serveSpawnEnv()', () => {
+    it('should set FINQU_STORE_DOMAIN when a domain is provided', () => {
+      const env = serveSpawnEnv('shop.example.com');
+      expect(env.FINQU_STORE_DOMAIN).toBe('shop.example.com');
+    });
+
+    it('should not override FINQU_STORE_DOMAIN when domain is empty', () => {
+      const previous = process.env.FINQU_STORE_DOMAIN;
+      delete process.env.FINQU_STORE_DOMAIN;
+      try {
+        const env = serveSpawnEnv('');
+        expect(env.FINQU_STORE_DOMAIN).toBeUndefined();
+      } finally {
+        if (previous === undefined) {
+          delete process.env.FINQU_STORE_DOMAIN;
+        } else {
+          process.env.FINQU_STORE_DOMAIN = previous;
+        }
+      }
     });
   });
 
@@ -236,7 +285,7 @@ describe('ThemeDevCommand', () => {
       expect(spawn).toHaveBeenCalledWith(
         'finqu-theme-dev',
         ['serve', '--port', '3000', '--dir', '/path/to/theme'],
-        { stdio: 'inherit' },
+        expect.objectContaining({ stdio: 'inherit' }),
       );
       expect(result).toEqual({ success: true });
     });
@@ -257,7 +306,30 @@ describe('ThemeDevCommand', () => {
       expect(spawn).toHaveBeenCalledWith(
         'finqu-theme-dev',
         ['serve', '--port', '8080', '--dir', '/custom/dir'],
-        { stdio: 'inherit' },
+        expect.objectContaining({ stdio: 'inherit' }),
+      );
+    });
+
+    it('should pass FINQU_STORE_DOMAIN from CLI config', async () => {
+      mockConfig.get.mockImplementation((key) => {
+        if (key === 'themeDir') return '/path/to/theme';
+        if (key === 'storeDomain') return 'shop.example.com';
+        return null;
+      });
+
+      const executePromise = command.execute({});
+
+      const exitHandler = serveChild.on.mock.calls.find(
+        (c) => c[0] === 'exit',
+      )[1];
+      exitHandler(0);
+
+      await executePromise;
+
+      const serveCall = spawn.mock.calls.find((c) => c[1]?.[0] === 'serve');
+      expect(serveCall[2].env.FINQU_STORE_DOMAIN).toBe('shop.example.com');
+      expect(mockLogger.printStatus).toHaveBeenCalledWith(
+        expect.stringContaining('shop.example.com'),
       );
     });
 
