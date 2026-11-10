@@ -1,10 +1,12 @@
 /**
  * App update command for Finqu CLI.
  * Updates configuration, listing, redirect URI, or locations for an app.
+ * Only the configuration fields given change; the rest are kept.
  */
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
 import { resolveAppId } from './app-resolve-id.js';
+import { isPartialUpdateUnsupported } from '../services/appApi.js';
 
 export class AppUpdateCommand extends BaseCommand {
   get name() {
@@ -31,7 +33,8 @@ export class AppUpdateCommand extends BaseCommand {
       },
       {
         flags: '--configuration <json>',
-        description: 'Configuration as JSON string',
+        description:
+          'Configuration fields to change, as JSON. Other fields are kept; set a field to null to remove it',
       },
       {
         flags: '--listing <json>',
@@ -76,11 +79,18 @@ export class AppUpdateCommand extends BaseCommand {
       }
 
       this.logger.printStatus(`Updating app ${appId}...`);
-      await appApi.updateApp(appId, data);
+      await appApi.patchApp(appId, data);
 
       this.logger.printSuccess('App updated successfully.');
       return { success: true };
     } catch (err) {
+      if (isPartialUpdateUnsupported(err)) {
+        this.logger.printError(
+          'This Finqu server does not support partial app updates yet, so nothing was changed.',
+        );
+        return { success: false, error: err };
+      }
+
       if (err instanceof SyntaxError) {
         this.logger.printError(
           'Invalid JSON in --configuration or --listing flag.',

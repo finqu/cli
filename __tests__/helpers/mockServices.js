@@ -110,6 +110,7 @@ export function createMockAppApi() {
     getApp: vi.fn().mockResolvedValue({}),
     createApp: vi.fn().mockResolvedValue({ id: 1 }),
     updateApp: vi.fn().mockResolvedValue(undefined),
+    patchApp: vi.fn().mockResolvedValue(undefined),
     deleteApp: vi.fn().mockResolvedValue({ deleted: true }),
     getShareLink: vi
       .fn()

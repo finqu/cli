@@ -162,10 +162,12 @@ finqu app update
 | Option                   | Description                                               |
 | ------------------------ | --------------------------------------------------------- |
 | `--app-id <id>`          | App ID (uses linked app if omitted)                       |
-| `--configuration <json>` | Configuration as JSON string                              |
+| `--configuration <json>` | Configuration fields to change, as JSON                   |
 | `--listing <json>`       | Listing data as JSON string                               |
 | `--redirect-uri <uri>`   | OAuth redirect URI (use `\|` separator for multiple)      |
 | `--locations <codes...>` | ISO country codes to restrict availability (omit for all) |
+
+Only the configuration fields you pass change; the rest are kept. For example, `--configuration '{"http":{"base_uri":"https://example.com"}}'` changes just the base URI. Objects merge field by field, `null` removes a field, and a list (such as `locales`) replaces the whole list.
 
 #### delete
 
@@ -330,11 +332,12 @@ While the tunnel is up:
 - The app's `http.base_uri` points at the tunnel URL.
 - Tunnel versions of any `localhost` redirect URIs are added next to the existing ones.
 
-Press Ctrl+C to restore the original values. If the CLI is killed before it can restore them, the original values stay saved in `.finqu-dev-session.json` and are restored the next time you run `finqu app dev`.
+Only the base URI and redirect URIs are changed; the rest of the app's configuration is never sent. Press Ctrl+C to set the base URI back and remove the tunnel redirect URIs. If the base URI was changed elsewhere while the command ran, it is left as it is. If the CLI is killed before it can restore it, the original base URI stays saved in `.finqu-dev-session.json` and is restored the next time you run `finqu app dev`.
 
 Notes:
 
 - Only draft apps can be used. The command refuses to modify a published app, so live merchants are never pointed at your machine.
+- If the Finqu server can't change the base URI on its own, the command leaves the app unchanged and prints the base URI and redirect URIs to set by hand.
 - The tunnel URL changes on every run, and anyone who knows it can reach your app. Verify the `Finqu-Signature` header on incoming requests.
 - Quick Tunnels are a Cloudflare testing service with no uptime guarantee. If you hit problems, use `--tunnel-url` with another tunnel.
 

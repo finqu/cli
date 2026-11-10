@@ -2,6 +2,11 @@
  * App dev command for Finqu CLI.
  * Exposes a local app server through a public HTTPS tunnel and points the
  * draft app's base URI at it for the duration of the session.
+ *
+ * The app is changed with partial updates (patchApp) that send only
+ * http.base_uri and redirect_uri. It never sends the app's configuration
+ * back: the configuration getApp returns is incomplete, and writing it back
+ * deletes the settings it leaves out (such as a payment app's callbacks).
  */
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -10,6 +15,7 @@ import prompts from 'prompts';
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
 import { resolveAppId } from './app-resolve-id.js';
+import { isPartialUpdateUnsupported } from '../services/appApi.js';
 import { createCloudflared } from '../services/cloudflared.js';
 import { createLocalServerDetector } from '../services/local-server-detector.js';
 import {
@@ -61,6 +67,31 @@ export function addTunnelRedirectUris(redirectUri, tunnelOrigin) {
   }
 
   return additions.length > 0 ? [...uris, ...additions].join('|') : null;
+}
+
+/**
+ * Remove the redirect URIs that point at a tunnel, keeping all others.
+ * @param {string|null|undefined} redirectUri Pipe-separated redirect URIs
+ * @param {string} tunnelOrigin Public tunnel origin
+ * @returns {string|null} Updated value (may be empty), or null if nothing to remove
+ */
+export function removeTunnelRedirectUris(redirectUri, tunnelOrigin) {
+  if (!redirectUri || !tunnelOrigin) return null;
+
+  const uris = String(redirectUri)
+    .split('|')
+    .map((u) => u.trim())
+    .filter(Boolean);
+
+  const kept = uris.filter((uri) => {
+    try {
+      return new URL(uri).origin !== tunnelOrigin;
+    } catch {
+      return true;
+    }
+  });
+
+  return kept.length !== uris.length ? kept.join('|') : null;
 }
 
 /**
@@ -339,17 +370,79 @@ export class AppDevCommand extends BaseCommand {
   }
 
   /**
-   * Put the app's original configuration back.
+   * Undo a dev session: set the base URI back and drop the tunnel redirect
+   * URIs. Only those two values are sent, and the base URI only if it still
+   * points at the tunnel, so changes made elsewhere meanwhile are kept.
    * @param {Object} appApi App API service
    * @param {Object} session Saved session
+   * @returns {Promise<{restored: boolean, baseUri: string|null, currentBaseUri: string|null}>}
    */
   async _restore(appApi, session) {
-    const data = { configuration: session.configuration || {} };
-    if (session.redirectUri !== undefined) {
-      data.redirect_uri = session.redirectUri ?? '';
+    // Sessions saved by earlier versions hold the whole configuration. Only
+    // its base URI is used: writing the rest back would delete settings.
+    const baseUri =
+      'baseUri' in session
+        ? session.baseUri
+        : (session.configuration?.http?.base_uri ?? null);
+
+    let current;
+    try {
+      current = await appApi.getApp(session.appId);
+    } catch (err) {
+      if (err?.status === 404) {
+        this.logger.printInfo(
+          `App ${session.appId} no longer exists; nothing to restore.`,
+        );
+        await this._clearSession();
+        return { restored: false, baseUri, currentBaseUri: null };
+      }
+      throw err;
     }
-    await appApi.updateApp(session.appId, data);
+
+    const currentBaseUri = current.configuration?.http?.base_uri ?? null;
+    const restoreBaseUri =
+      Boolean(session.tunnelUrl) && currentBaseUri === session.tunnelUrl;
+
+    const update = {};
+    if (restoreBaseUri) {
+      update.configuration = { http: { base_uri: baseUri } };
+    }
+    const redirectUri = removeTunnelRedirectUris(
+      current.redirect_uri,
+      session.tunnelUrl,
+    );
+    if (redirectUri !== null) {
+      update.redirect_uri = redirectUri;
+    }
+
+    if (Object.keys(update).length > 0) {
+      try {
+        await appApi.patchApp(session.appId, update);
+      } catch (err) {
+        if (!isPartialUpdateUnsupported(err)) throw err;
+        await this._clearSession();
+        this.logger.printInfo(
+          `This Finqu server can't change the base URI on its own, so it was not restored. Set app ${session.appId}'s base URI back to ${baseUri ?? '(none)'} by hand${redirectUri !== null ? ` and remove the redirect URIs that start with ${session.tunnelUrl}` : ''}.`,
+        );
+        return { restored: false, baseUri, currentBaseUri };
+      }
+    }
+
     await this._clearSession();
+    return { restored: restoreBaseUri, baseUri, currentBaseUri };
+  }
+
+  /**
+   * Log the outcome of _restore.
+   */
+  _reportRestore({ restored, baseUri, currentBaseUri }) {
+    if (restored) {
+      this.logger.printSuccess(`Restored base URI ${baseUri ?? '(none)'}.`);
+    } else if (currentBaseUri !== null && currentBaseUri !== baseUri) {
+      this.logger.printInfo(
+        `Left the base URI as ${currentBaseUri}; it no longer points at the tunnel.`,
+      );
+    }
   }
 
   /**
@@ -361,9 +454,9 @@ export class AppDevCommand extends BaseCommand {
     if (!stale?.appId) return;
 
     this.logger.printInfo(
-      `Found an unfinished dev session for app ${stale.appId}. Restoring base URI ${stale.configuration?.http?.base_uri ?? '(none)'}...`,
+      `Found an unfinished dev session for app ${stale.appId}. Restoring its base URI...`,
     );
-    await this._restore(appApi, stale);
+    this._reportRestore(await this._restore(appApi, stale));
   }
 
   async execute(options = {}) {
@@ -443,47 +536,73 @@ export class AppDevCommand extends BaseCommand {
         );
       }
 
-      const originalConfiguration = appData.configuration || {};
-      const newConfiguration = {
-        ...originalConfiguration,
-        http: { ...(originalConfiguration.http || {}), base_uri: publicOrigin },
-      };
-
+      const originalBaseUri = appData.configuration?.http?.base_uri ?? null;
       const newRedirectUri = addTunnelRedirectUris(
         appData.redirect_uri,
         publicOrigin,
       );
 
-      // Persist the original state before touching the app so a crash can be
-      // recovered on the next run.
+      // Save what to undo before touching the app, so a crashed run can be
+      // undone on the next one.
       session = {
         appId,
         startedAt: new Date().toISOString(),
         tunnelUrl: publicOrigin,
-        configuration: originalConfiguration,
+        baseUri: originalBaseUri,
       };
-      const update = { configuration: newConfiguration };
-      if (newRedirectUri) {
-        session.redirectUri = appData.redirect_uri;
-        update.redirect_uri = newRedirectUri;
-      }
       await this._writeSession(session);
 
+      const update = { configuration: { http: { base_uri: publicOrigin } } };
+      if (newRedirectUri) {
+        update.redirect_uri = newRedirectUri;
+      }
+
       this.logger.printStatus(`Pointing app ${appId} at ${publicOrigin}...`);
-      await appApi.updateApp(appId, update);
+      let pointed = true;
+      try {
+        await appApi.patchApp(appId, update);
+      } catch (err) {
+        if (!isPartialUpdateUnsupported(err)) throw err;
+        // The server would need the whole configuration, which is not safe
+        // to send. Leave the app alone and say what to set by hand.
+        pointed = false;
+        session = null;
+        await this._clearSession();
+      }
 
       this.logger.printSuccess(`Tunnel ready: ${publicOrigin} → ${localUrl}`);
-      this.logger.print(
-        `\n  App:        ${appData.name} (${appId})` +
-          `\n  Base URI:   ${publicOrigin}` +
-          (newRedirectUri
-            ? `\n  Redirects:  ${newRedirectUri.split('|').join('\n              ')}`
-            : '') +
-          `\n\n  Your app is reachable from the public internet while this runs.` +
-          `\n  Verify the Finqu-Signature header on incoming requests.` +
-          `\n\n  Press Ctrl+C to stop and restore the original base URI` +
-          ` (${originalConfiguration.http?.base_uri ?? 'none'}).\n`,
-      );
+
+      if (pointed) {
+        this.logger.print(
+          `\n  App:        ${appData.name} (${appId})` +
+            `\n  Base URI:   ${publicOrigin}` +
+            (newRedirectUri
+              ? `\n  Redirects:  ${newRedirectUri.split('|').join('\n              ')}`
+              : '') +
+            `\n\n  Your app is reachable from the public internet while this runs.` +
+            `\n  Verify the Finqu-Signature header on incoming requests.` +
+            `\n\n  Press Ctrl+C to stop and restore the original base URI` +
+            ` (${originalBaseUri ?? 'none'}).\n`,
+        );
+      } else {
+        const addedRedirects = newRedirectUri
+          ? newRedirectUri
+              .split('|')
+              .filter((uri) => uri.startsWith(publicOrigin))
+          : [];
+        this.logger.print(
+          `\n  This Finqu server can't change the base URI on its own yet, so app ${appData.name} (${appId}) was not changed.` +
+            `\n  To send Finqu's requests to this tunnel, set the app's base URI to:` +
+            `\n\n      ${publicOrigin}` +
+            (addedRedirects.length > 0
+              ? `\n\n  and add these redirect URIs:\n\n      ${addedRedirects.join('\n      ')}`
+              : '') +
+            `\n\n  Set the base URI back to ${originalBaseUri ?? '(none)'} when you're done.` +
+            `\n\n  Your app is reachable from the public internet while this runs.` +
+            `\n  Verify the Finqu-Signature header on incoming requests.` +
+            `\n\n  Press Ctrl+C to stop the tunnel.\n`,
+        );
+      }
 
       const reason = await Promise.race([
         stopped,
@@ -509,14 +628,11 @@ export class AppDevCommand extends BaseCommand {
     } finally {
       if (session && appApi) {
         try {
-          this.logger.printStatus('Restoring app configuration...');
-          await this._restore(appApi, session);
-          this.logger.printSuccess(
-            `Restored base URI ${session.configuration?.http?.base_uri ?? '(none)'}.`,
-          );
+          this.logger.printStatus('Restoring the base URI...');
+          this._reportRestore(await this._restore(appApi, session));
         } catch (restoreErr) {
           this.logger.printError(
-            `Failed to restore app configuration. Run "finqu app dev" again to retry; the original values are saved in ${SESSION_FILENAME}.`,
+            `Failed to restore the base URI (${session.baseUri ?? 'none'}). Run "finqu app dev" again to retry; it is saved in ${SESSION_FILENAME}.`,
             restoreErr,
           );
         }

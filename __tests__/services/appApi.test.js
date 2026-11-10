@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AppApi, createAppApi } from '../../src/services/appApi.js';
+import {
+  AppApi,
+  createAppApi,
+  isPartialUpdateUnsupported,
+} from '../../src/services/appApi.js';
 
 describe('AppApi', () => {
   let appApi;
@@ -212,6 +216,38 @@ describe('AppApi', () => {
           form: { configuration: '{"already":"stringified"}' },
         }),
       );
+    });
+  });
+
+  describe('patchApp', () => {
+    it('sends a PATCH with only the given fields', async () => {
+      await appApi.patchApp(42, {
+        configuration: { http: { base_uri: null } },
+        redirect_uri: 'http://localhost:3000/cb',
+      });
+
+      expect(mockHttpClient.request).toHaveBeenCalledWith({
+        url: 'https://account.finqu.com/api/external/v1/developer/apps/42',
+        method: 'PATCH',
+        form: {
+          configuration: '{"http":{"base_uri":null}}',
+          redirect_uri: 'http://localhost:3000/cb',
+        },
+      });
+    });
+  });
+
+  describe('isPartialUpdateUnsupported', () => {
+    it('recognises a 405 from a server without PATCH', () => {
+      expect(
+        isPartialUpdateUnsupported({
+          status: 405,
+          error: 'method_not_allowed',
+        }),
+      ).toBe(true);
+      expect(isPartialUpdateUnsupported({ status: 404 })).toBe(false);
+      expect(isPartialUpdateUnsupported(new Error('network'))).toBe(false);
+      expect(isPartialUpdateUnsupported(undefined)).toBe(false);
     });
   });
 
