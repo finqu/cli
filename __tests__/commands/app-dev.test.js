@@ -595,4 +595,148 @@ describe('AppDevCommand', () => {
       expect(prompt).not.toHaveBeenCalled();
     });
   });
+
+  describe('Next.js NEXT_PUBLIC_APP_URL', () => {
+    const envLocal = () => path.join(projectDir, '.env.local');
+    const read = (p) => fsp.readFile(p, 'utf8');
+    const exists = (p) =>
+      fsp.access(p).then(
+        () => true,
+        () => false,
+      );
+
+    beforeEach(async () => {
+      await fsp.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ dependencies: { next: '15.0.0' } }),
+      );
+      await fsp.writeFile(
+        path.join(projectDir, 'next.config.js'),
+        `module.exports = { allowedDevOrigins: ['*.trycloudflare.com'] };\n`,
+      );
+    });
+
+    it('points it at the tunnel while running and restores it on exit', async () => {
+      const original =
+        '# app\nDATABASE_URL=postgres://x\nNEXT_PUBLIC_APP_URL=http://localhost:3000\nSECRET=1\n';
+      await fsp.writeFile(envLocal(), original);
+
+      const run = command.execute({});
+      await waitFor(() => mockAppApi.patchApp.mock.calls.length === 1);
+
+      expect(await read(envLocal())).toBe(
+        '# app\nDATABASE_URL=postgres://x\nNEXT_PUBLIC_APP_URL=https://abc-def.trycloudflare.com\nSECRET=1\n',
+      );
+      expect(JSON.parse(mockFs.files.get(SESSION_PATH)).env).toMatchObject({
+        key: 'NEXT_PUBLIC_APP_URL',
+        previousLine: 'NEXT_PUBLIC_APP_URL=http://localhost:3000',
+      });
+
+      process.emit('SIGINT');
+      await run;
+
+      expect(await read(envLocal())).toBe(original);
+      expect(mockFs.files.has(SESSION_PATH)).toBe(false);
+    });
+
+    it('creates .env.local when missing and removes it again', async () => {
+      const run = command.execute({});
+      await waitFor(() => mockAppApi.patchApp.mock.calls.length === 1);
+
+      expect(await read(envLocal())).toBe(
+        'NEXT_PUBLIC_APP_URL=https://abc-def.trycloudflare.com\n',
+      );
+
+      process.emit('SIGINT');
+      await run;
+
+      expect(await exists(envLocal())).toBe(false);
+    });
+
+    it('writes to .env.development.local when that file defines it', async () => {
+      const devLocal = path.join(projectDir, '.env.development.local');
+      await fsp.writeFile(devLocal, 'NEXT_PUBLIC_APP_URL=https://old.example\n');
+      await fsp.writeFile(envLocal(), 'NEXT_PUBLIC_APP_URL=http://localhost:3000\n');
+
+      const run = command.execute({});
+      await waitFor(() => mockAppApi.patchApp.mock.calls.length === 1);
+
+      expect(await read(devLocal)).toBe(
+        'NEXT_PUBLIC_APP_URL=https://abc-def.trycloudflare.com\n',
+      );
+      expect(await read(envLocal())).toBe(
+        'NEXT_PUBLIC_APP_URL=http://localhost:3000\n',
+      );
+
+      process.emit('SIGINT');
+      await run;
+      expect(await read(devLocal)).toBe('NEXT_PUBLIC_APP_URL=https://old.example\n');
+    });
+
+    it('leaves env files alone outside Next.js projects', async () => {
+      await fsp.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ devDependencies: { vite: '6.0.0' } }),
+      );
+
+      const run = command.execute({});
+      await waitFor(() => mockAppApi.patchApp.mock.calls.length === 1);
+      process.emit('SIGINT');
+      await run;
+
+      expect(await exists(envLocal())).toBe(false);
+    });
+
+    it('still sets and restores it when the app cannot be pointed at the tunnel', async () => {
+      await fsp.writeFile(envLocal(), 'NEXT_PUBLIC_APP_URL=http://localhost:3000\n');
+      mockAppApi.patchApp.mockRejectedValueOnce({ status: 405 });
+
+      const run = command.execute({});
+      await waitFor(() =>
+        mockLogger.print.mock.calls.some(([t]) => t.includes("set the app's base URI to")),
+      );
+
+      expect(await read(envLocal())).toBe(
+        'NEXT_PUBLIC_APP_URL=https://abc-def.trycloudflare.com\n',
+      );
+      const saved = JSON.parse(mockFs.files.get(SESSION_PATH));
+      expect(saved.appId).toBeUndefined();
+      expect(saved.env.key).toBe('NEXT_PUBLIC_APP_URL');
+
+      process.emit('SIGINT');
+      await run;
+
+      expect(await read(envLocal())).toBe('NEXT_PUBLIC_APP_URL=http://localhost:3000\n');
+      expect(mockFs.files.has(SESSION_PATH)).toBe(false);
+      expect(mockAppApi.patchApp).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores the env change of a crashed session on the next run', async () => {
+      await fsp.writeFile(
+        envLocal(),
+        'NEXT_PUBLIC_APP_URL=https://dead-tunnel.trycloudflare.com\n',
+      );
+      mockFs.files.set(
+        SESSION_PATH,
+        JSON.stringify({
+          startedAt: '2026-11-10T10:00:00Z',
+          tunnelUrl: 'https://dead-tunnel.trycloudflare.com',
+          env: {
+            path: envLocal(),
+            key: 'NEXT_PUBLIC_APP_URL',
+            existed: true,
+            previousLine: 'NEXT_PUBLIC_APP_URL=http://localhost:3000',
+            changed: true,
+          },
+        }),
+      );
+      mockApp.services.tokenManager.hasAccessToken.mockReturnValue(true);
+      mockAppApi.getApp.mockResolvedValue({ ...draftApp, is_published: true });
+
+      await command.execute({});
+
+      expect(await read(envLocal())).toBe('NEXT_PUBLIC_APP_URL=http://localhost:3000\n');
+      expect(mockFs.files.has(SESSION_PATH)).toBe(false);
+    });
+  });
 });

@@ -245,7 +245,7 @@ export function portFromScripts(pkg) {
 /**
  * Detect the framework used in a directory.
  * @param {string} dir Project directory
- * @returns {Promise<{framework: Object|null, configPath: string|null, scriptPort: number|null}>}
+ * @returns {Promise<{dir: string, framework: Object|null, configPath: string|null, scriptPort: number|null}>}
  */
 export async function detectProject(dir) {
   const pkg = await readPackageJson(dir);
@@ -273,7 +273,7 @@ export async function detectProject(dir) {
     }
   }
 
-  return { framework, configPath, scriptPort: portFromScripts(pkg) };
+  return { dir, framework, configPath, scriptPort: portFromScripts(pkg) };
 }
 
 /**

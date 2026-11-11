@@ -22,9 +22,17 @@ import {
   detectProject,
   planHostAllowance,
 } from '../services/framework-config.js';
+import {
+  envFileHasKey,
+  setEnvValue,
+  restoreEnvValue,
+} from '../services/env-file.js';
 
 const DEFAULT_PORT = 3000;
 const SESSION_FILENAME = '.finqu-dev-session.json';
+const NEXT_APP_URL_KEY = 'NEXT_PUBLIC_APP_URL';
+// Next.js gives .env.development.local priority over .env.local in dev.
+const NEXT_ENV_FILES = ['.env.development.local', '.env.local'];
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 /**
@@ -338,6 +346,70 @@ export class AppDevCommand extends BaseCommand {
     );
   }
 
+  /**
+   * In a Next.js project, point NEXT_PUBLIC_APP_URL at the tunnel. Writes to
+   * the env file that defines it (.env.development.local wins over
+   * .env.local), or adds it to .env.local.
+   * @param {Object} project Result of detectProject()
+   * @param {string} publicOrigin Tunnel origin
+   * @returns {Promise<Object|null>} Change record for restoreEnvValue()
+   */
+  async _setNextAppUrl(project, publicOrigin) {
+    if (project.framework?.id !== 'nextjs') return null;
+
+    let target = path.join(project.dir, NEXT_ENV_FILES[1]);
+    for (const file of NEXT_ENV_FILES) {
+      const candidate = path.join(project.dir, file);
+      if (await envFileHasKey(candidate, NEXT_APP_URL_KEY)) {
+        target = candidate;
+        break;
+      }
+    }
+
+    const change = await setEnvValue(target, NEXT_APP_URL_KEY, publicOrigin);
+    const name = path.relative(this.cwd, target);
+    if (change.changed) {
+      this.logger.printSuccess(
+        `Set ${NEXT_APP_URL_KEY}=${publicOrigin} in ${name}. Next.js reloads env files automatically.`,
+      );
+    }
+    return change.changed ? change : null;
+  }
+
+  /**
+   * Undo _setNextAppUrl.
+   * @param {Object} change Change record
+   */
+  async _restoreNextAppUrl(change) {
+    await restoreEnvValue(change);
+    this.logger.printSuccess(
+      `Restored ${change.key} in ${path.relative(this.cwd, change.path)}.`,
+    );
+  }
+
+  /**
+   * Restore the env change recorded in a session, then drop it from the
+   * session file so it is never applied twice.
+   * @param {Object} session Saved session
+   */
+  async _restoreSessionEnv(session) {
+    if (!session?.env) return;
+    try {
+      await this._restoreNextAppUrl(session.env);
+    } catch (err) {
+      this.logger.printError(
+        `Failed to restore ${session.env.key} in ${session.env.path}. Set it back by hand.`,
+        err,
+      );
+    }
+    delete session.env;
+    if (session.appId) {
+      await this._writeSession(session);
+    } else {
+      await this._clearSession();
+    }
+  }
+
   _createTunnelProvider() {
     if (this.deps.cloudflared) return this.deps.cloudflared;
     return createCloudflared({ logger: this.logger });
@@ -451,7 +523,15 @@ export class AppDevCommand extends BaseCommand {
    */
   async _restoreStaleSession(appApi) {
     const stale = await this._readSession();
-    if (!stale?.appId) return;
+    if (!stale) return;
+
+    if (stale.env) {
+      this.logger.printInfo(
+        `Found an unfinished dev session. Restoring ${stale.env.key}...`,
+      );
+      await this._restoreSessionEnv(stale);
+    }
+    if (!stale.appId) return;
 
     this.logger.printInfo(
       `Found an unfinished dev session for app ${stale.appId}. Restoring its base URI...`,
@@ -552,6 +632,19 @@ export class AppDevCommand extends BaseCommand {
       };
       await this._writeSession(session);
 
+      try {
+        const envChange = await this._setNextAppUrl(project, publicOrigin);
+        if (envChange) {
+          session.env = envChange;
+          await this._writeSession(session);
+        }
+      } catch (envErr) {
+        this.logger.printError(
+          `Could not set ${NEXT_APP_URL_KEY} for the tunnel.`,
+          envErr,
+        );
+      }
+
       const update = { configuration: { http: { base_uri: publicOrigin } } };
       if (newRedirectUri) {
         update.redirect_uri = newRedirectUri;
@@ -566,8 +659,18 @@ export class AppDevCommand extends BaseCommand {
         // The server would need the whole configuration, which is not safe
         // to send. Leave the app alone and say what to set by hand.
         pointed = false;
-        session = null;
-        await this._clearSession();
+        if (session.env) {
+          // Keep the session only to undo the env change.
+          session = {
+            startedAt: session.startedAt,
+            tunnelUrl: session.tunnelUrl,
+            env: session.env,
+          };
+          await this._writeSession(session);
+        } else {
+          session = null;
+          await this._clearSession();
+        }
       }
 
       this.logger.printSuccess(`Tunnel ready: ${publicOrigin} → ${localUrl}`);
@@ -626,7 +729,10 @@ export class AppDevCommand extends BaseCommand {
       this.logger.handleError(err);
       return { success: false, error: err };
     } finally {
-      if (session && appApi) {
+      if (session?.env) {
+        await this._restoreSessionEnv(session);
+      }
+      if (session?.appId && appApi) {
         try {
           this.logger.printStatus('Restoring the base URI...');
           this._reportRestore(await this._restore(appApi, session));

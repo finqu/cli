@@ -325,6 +325,8 @@ finqu app dev
 
 The entry is permanent and keeps working when the tunnel URL changes. Both frameworks restart their dev server on their own when the config changes. For Nuxt, Astro, config shapes the CLI doesn't recognise, or non-interactive runs, it prints the line to add instead.
 
+**Next.js app URL.** In a Next.js project, `NEXT_PUBLIC_APP_URL` is set to the tunnel URL while the command runs, then put back to its old value when you stop (or removed, if the CLI added it). It goes in `.env.development.local` if that file already defines the variable, because that file takes priority in development. Otherwise it goes in `.env.local`, which is created if needed. Other lines in the file are left alone. Next.js reloads env files without a restart.
+
 By default this starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) (`https://<random>.trycloudflare.com`), which needs no Cloudflare account. If `cloudflared` is not on your `PATH`, the CLI downloads it to `~/.finqu/bin` on first use and checks it against the release's SHA256 checksum.
 
 While the tunnel is up:
