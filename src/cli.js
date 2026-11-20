@@ -9,7 +9,13 @@ import { createFullApp } from './index.js'; // Assuming this now accepts logger 
 import { createLogger } from './core/logger.js';
 import { createConfigManager } from './core/config.js';
 import { createFileSystem } from './io/fileSystem.js';
-import { isCliVersionRequest } from './core/argv.js';
+import {
+  exitOverrideAll,
+  isCliVersionRequest,
+  isCommanderExit,
+  machineFlagsIn,
+  usageMessage,
+} from './core/argv.js';
 import {
   EXIT_CODES,
   buildEnvelope,
@@ -17,6 +23,7 @@ import {
   keyFromOperands,
   printEnvelope,
   refusalMessage,
+  UsageError,
 } from './core/non-interactive.js';
 
 // Configuration constants
@@ -29,8 +36,11 @@ const DEFAULT_CONFIG_FILE =
 async function main() {
   // 1. Initialize Logger (starts with verbose off)
   const logger = createLogger();
-  let nonInteractive = false;
-  let json = false;
+  const earlyFlags = machineFlagsIn(process.argv.slice(2));
+  let json = earlyFlags.json;
+  let nonInteractive =
+    earlyFlags.nonInteractive || json || isNonInteractiveEnv();
+  let commandName = 'startup';
 
   try {
     if (isCliVersionRequest(process.argv.slice(2))) {
@@ -54,7 +64,7 @@ async function main() {
       )
       .option(
         '--json',
-        'Print one JSON result line on stdout (theme download, deploy, delete and configure)',
+        'Print one JSON result line on stdout and never prompt, as --non-interactive does (theme download, deploy, delete and configure)',
         false,
       )
       .option(
@@ -63,13 +73,20 @@ async function main() {
         DEFAULT_CONFIG_FILE,
       );
 
+    // Commander usage errors are caught below so a machine caller gets exit
+    // code 2 and, with --json, a JSON line.
+    program.exitOverride();
+
     // 2. Parse arguments to get options like --verbose and --config
     // We parse *before* full app initialization to get these values
     const parsed = program.parseOptions(process.argv);
     const options = program.opts(); // Get parsed options
 
-    nonInteractive = !!options.nonInteractive || isNonInteractiveEnv();
     json = !!options.json;
+    // --json promises one JSON line and a reliable exit code, which a prompt
+    // or an exit from the logger would break.
+    nonInteractive =
+      !!options.nonInteractive || isNonInteractiveEnv() || json;
     if (json) {
       logger.setMachineOutput(true);
     }
@@ -82,6 +99,9 @@ async function main() {
     if (nonInteractive || json) {
       const operands = parsed.operands.slice(2);
       const key = keyFromOperands(operands);
+      if (operands.length > 0) {
+        commandName = key;
+      }
       const refusal =
         operands.length > 0 ? refusalMessage(key, { nonInteractive, json }) : null;
       if (refusal) {
@@ -144,10 +164,32 @@ async function main() {
     // 6. Register all commands with Commander
     // The command registry now gets the fully initialized app instance
     app.commands.registerCommands(program); // Access commands via app
+    exitOverrideAll(program);
 
     // 7. Parse the full command line arguments and execute the command
     await program.parseAsync(process.argv);
   } catch (err) {
+    if (isCommanderExit(err)) {
+      // Commander has already printed the message.
+      if (err.exitCode === 0) {
+        process.exitCode = 0;
+      } else if (nonInteractive) {
+        process.exitCode = EXIT_CODES.REFUSED;
+        if (json) {
+          printEnvelope(
+            buildEnvelope(
+              commandName,
+              undefined,
+              new UsageError(usageMessage(err)),
+            ),
+          );
+        }
+      } else {
+        process.exitCode = err.exitCode;
+      }
+      return;
+    }
+
     // Use the initialized logger to handle errors
     logger.handleError(err);
     // process.exit(1) is handled within logger.handleError, except in

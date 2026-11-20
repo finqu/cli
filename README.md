@@ -77,7 +77,7 @@ These global options can be used with any command:
 | `-v, --verbose`       | Enable detailed logging output | `false`  |
 | `-c, --config <path>` | Path to the configuration file | `./.env` |
 | `--non-interactive`   | Never prompt; see [Non-interactive mode](#non-interactive-mode) | `false` |
-| `--json`              | Print one JSON result line on stdout (theme download, deploy, delete and configure) | `false` |
+| `--json`              | Print one JSON result line on stdout (theme download, deploy, delete and configure). Implies `--non-interactive` | `false` |
 | `--help`              | Display help information       |          |
 | `--version`           | Display version information (only before a command; `theme configure` has its own `--version <name>`) |          |
 
@@ -382,7 +382,7 @@ finqu theme download [sources...]
 | -------------- | ------------------------------------------------------------- |
 | `[sources...]` | Optional file paths to download specific files or directories |
 
-When no sources are specified, all theme assets will be downloaded to your local directory.
+When no sources are specified, all theme assets will be downloaded to your local directory. A file the server refuses (any status other than 2xx) is reported as failed and the command exits non-zero. Each file is written to a temporary file and renamed when complete, so a failed download never changes the local file.
 
 #### list
 
@@ -415,7 +415,9 @@ finqu theme deploy [sources...]
 | `--no-compile`   | Skip asset compilation on the server after upload                                                |
 | `[sources...]`   | Optional file paths to deploy specific files or directories                                        |
 
-When no sources are specified, all local theme assets will be uploaded.
+When no sources are specified, all local theme assets will be uploaded. To name a file that starts with `-`, put it after `--`, as in `finqu theme deploy -- --clean`.
+
+> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. A named file that is refused is reported as skipped.
 
 > **Note:** By default, `config/settings_data.json` and the `.draft/` directory are not uploaded, to avoid overwriting theme settings from the backend theme editor. Use `--config-pull` / `--config-push` for settings, and `--assets-pull` for compiled `public/` assets. When both `--config-push` and `--config-pull` are set, settings are pushed first (no pre-pull overwrite), then pulled after deploy.
 
@@ -573,15 +575,19 @@ If the specified port is already in use, the command will automatically find and
 
 For scripts and sandboxes, `--non-interactive` (or `FINQU_NON_INTERACTIVE=1`) guarantees that the CLI never prompts. Only `theme download`, `theme deploy`, `theme delete` and `theme configure` are allowed; every other command, including `sign-in`, `app dev` and `theme dev`, is refused.
 
-If `.env` holds no access token, the CLI makes no token check at startup, no refresh call and sends no `Authorization` header, which suits an environment where a proxy adds it. An expired token fails the run instead of asking for credentials.
+If `.env` holds no access token, the CLI makes no token check at startup, no refresh call and sends no `Authorization` header, which suits an environment where a proxy adds it. An expired token fails the run instead of asking for credentials: refreshing a token needs the API client key and secret, which the CLI only asks for in a prompt, so a refresh cannot run without one.
 
 | Exit code | Meaning                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------- |
 | `0`       | Everything succeeded                                                                     |
 | `1`       | A file failed or was skipped (for example over 10 MB), the compile failed, or the command errored |
-| `2`       | The command was refused, or a flag is missing or invalid                                 |
+| `2`       | The command was refused, or a flag is missing, unknown or invalid (including flags Commander rejects, such as an unknown option) |
 
-With `--json`, the result is one line on stdout and all other output goes to stderr:
+`--json` implies `--non-interactive`, so a run with `--json` alone never prompts either. With `--json`, the result is one line on stdout and all other output goes to stderr. A flag error prints the same line with `"code":"USAGE_ERROR"` and exit code `2`. `--help` prints help and exits `0` with no JSON line.
+
+`theme download` fails a file when the server answers with a status other than 2xx, lists it in `failed` and exits `1`. It writes each file to a temporary file and renames it when complete, so a failed download never changes the local file.
+
+The result of a run looks like this:
 
 ```json
 {"ok":true,"command":"theme deploy","exitCode":0,"error":null,"result":{"deployedCount":1,"removedCount":0,"uploaded":["templates/index.liquid"],"failed":[],"skipped":[],"compile":{"attempted":true,"ok":true,"error":null}}}

@@ -9,6 +9,10 @@ import { UsageError } from '../core/non-interactive.js';
 
 const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
+/** Largest page the API serves for a list, and a bound on the paging loop */
+const VERSIONS_PAGE_SIZE = 50;
+const MAX_VERSION_PAGES = 100;
+
 /**
  * Derive a storefront domain hostname from channel urls[].base.
  * @param {Array<{base?: string}>|undefined} urls Channel URL entries
@@ -159,6 +163,47 @@ export class ConfigureCommand extends BaseCommand {
   }
 
   /**
+   * Whether the API lists a version for the theme. The API serves at most
+   * 50 versions per page and answers a page past the end with the first page
+   * again, so paging stops at a short page, at a page with nothing new, or
+   * at MAX_VERSION_PAGES.
+   * @param {string} merchantId Merchant id
+   * @param {string} channel Sales channel id
+   * @param {string} theme Theme id
+   * @param {string} version Version id to look for
+   * @returns {Promise<boolean>} True when the version is listed
+   * @private
+   */
+  async hasVersion(merchantId, channel, theme, version) {
+    const themeApi = this.app.services.themeApi;
+    const seen = new Set();
+
+    for (let page = 1; page <= MAX_VERSION_PAGES; page++) {
+      const versions =
+        page === 1
+          ? await themeApi.listVersions(merchantId, { id: channel }, theme)
+          : await themeApi.listVersions(merchantId, { id: channel }, theme, {
+              page,
+            });
+      if (!Array.isArray(versions)) {
+        return false;
+      }
+
+      const ids = versions.map((v) => String(v.id));
+      if (ids.includes(version)) {
+        return true;
+      }
+
+      const before = seen.size;
+      ids.forEach((id) => seen.add(id));
+      if (versions.length < VERSIONS_PAGE_SIZE || seen.size === before) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Configure from --channel, --theme and --version without any prompt.
    * The version must be one the API lists for the theme, so a typo or a
    * release the caller may not use is refused before anything is saved.
@@ -200,13 +245,9 @@ export class ConfigureCommand extends BaseCommand {
     const merchantId = this.config.get('merchant');
     const previous = this.config.get('store');
 
-    let versions;
+    let found;
     try {
-      versions = await this.app.services.themeApi.listVersions(
-        merchantId,
-        { id: channel },
-        theme,
-      );
+      found = await this.hasVersion(merchantId, channel, theme, version);
     } catch (err) {
       throw AppError.configError(
         `Could not list versions of theme ${theme} on channel ${channel}`,
@@ -214,7 +255,7 @@ export class ConfigureCommand extends BaseCommand {
       );
     }
 
-    if (!Array.isArray(versions) || !versions.some((v) => String(v.id) === version)) {
+    if (!found) {
       throw new AppError(
         `Unknown version "${version}" for theme ${theme} on channel ${channel}`,
         'UNKNOWN_VERSION',

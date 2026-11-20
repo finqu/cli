@@ -86,6 +86,24 @@ export class DeployCommand extends BaseCommand {
   }
 
   /**
+   * Whether a path is the configuration file the CLI loaded and writes
+   * tokens into. It can have any name when -c or FINQU_CONFIG points at it.
+   * @param {string} relativePath Path relative to the theme directory
+   * @returns {boolean}
+   * @private
+   */
+  _isConfigFile(relativePath) {
+    const configFile = this.config.configFilePath;
+    if (!configFile) {
+      return false;
+    }
+    const themeDir = this.config.get('themeDir');
+    return (
+      path.resolve(themeDir, relativePath) === path.resolve(configFile)
+    );
+  }
+
+  /**
    * Whether a relative path should be skipped for upload
    * @param {string} relativePath
    * @param {Object} options
@@ -93,6 +111,12 @@ export class DeployCommand extends BaseCommand {
    * @private
    */
   _shouldSkipUpload(relativePath, options) {
+    if (this._isConfigFile(relativePath)) {
+      this.logger.printVerbose(
+        `Skipping upload of CLI configuration file: ${relativePath}`,
+      );
+      return true;
+    }
     if (!this.fileSystem.checkPath(relativePath)) {
       this.logger.printVerbose(`Skipping excluded file: ${relativePath}`);
       return true;

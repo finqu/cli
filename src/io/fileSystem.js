@@ -7,6 +7,12 @@ import {
 import path from 'path';
 
 /**
+ * Files the CLI keeps credentials and session data in: .env and .env.*, plus
+ * the .finqu-* files it writes (webhook buffer, dev session).
+ */
+const CREDENTIAL_FILE = /^\.(env(\..*)?|finqu-.*)$/i;
+
+/**
  * FileSystem abstraction layer
  * Provides standardized methods for file operations to improve testability
  */
@@ -88,6 +94,16 @@ export class FileSystem {
   }
 
   /**
+   * Renames a file, replacing the destination when it exists
+   * @param {string} oldPath Current path
+   * @param {string} newPath New path
+   * @returns {Promise<void>} Promise that resolves when complete
+   */
+  async rename(oldPath, newPath) {
+    return fs.rename(oldPath, newPath);
+  }
+
+  /**
    * Deletes a file
    * @param {string} filePath Path to delete
    * @returns {Promise<void>} Promise that resolves when complete
@@ -102,6 +118,12 @@ export class FileSystem {
    * @returns {boolean} Whether path should be included
    */
   checkPath(filePath) {
+    // A top-level .env passes the hidden-path test below, which needs a
+    // separator before the dot.
+    const segments = filePath.split(/[\\/]+/);
+    if (segments.some((segment) => CREDENTIAL_FILE.test(segment))) {
+      return false;
+    }
     // Hidden files and directories
     if (filePath.indexOf('/.') > -1 || filePath.indexOf('\\.') > -1) {
       return false;

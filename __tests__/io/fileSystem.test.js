@@ -30,6 +30,7 @@ vi.mock('fs', () => {
       readdir: vi.fn(),
       stat: vi.fn(),
       unlink: vi.fn(), // Add mock for unlink
+      rename: vi.fn(),
     },
     existsSync: vi.fn(),
     createReadStream: vi.fn(() => new MockReadStream()),
@@ -115,6 +116,22 @@ describe('src/io/fileSystem.js', () => {
         '/path/to/nonexistent.txt',
         'utf-8',
       );
+    });
+  });
+
+  describe('rename()', () => {
+    it('should rename through fs.promises', async () => {
+      fs.rename.mockResolvedValueOnce(undefined);
+
+      await fileSystem.rename('/path/.file.part', '/path/file');
+
+      expect(fs.rename).toHaveBeenCalledWith('/path/.file.part', '/path/file');
+    });
+
+    it('should propagate errors when renaming fails', async () => {
+      fs.rename.mockRejectedValueOnce(new Error('EXDEV'));
+
+      await expect(fileSystem.rename('/a', '/b')).rejects.toThrow('EXDEV');
     });
   });
 
@@ -325,6 +342,31 @@ describe('src/io/fileSystem.js', () => {
 
       gitPaths.forEach((path) => {
         expect(fileSystem.checkPath(path)).toBe(false);
+      });
+    });
+
+    it('should return false for credential files at any depth, whatever the case', () => {
+      const credentialPaths = [
+        '.env',
+        '.env.local',
+        '.env.production',
+        '.ENV',
+        '.Env.Local',
+        './.env',
+        'sub/.env',
+        'sub\\.env',
+        '.finqu-webhooks.json',
+        '.finqu-dev-session.json',
+      ];
+
+      credentialPaths.forEach((p) => {
+        expect(fileSystem.checkPath(p)).toBe(false);
+      });
+    });
+
+    it('should not mistake similar names for credential files', () => {
+      ['environment.liquid', 'assets/env.js', 'assets/envelope/x.js', 'config/finqu-settings.json'].forEach((p) => {
+        expect(fileSystem.checkPath(p)).toBe(true);
       });
     });
 

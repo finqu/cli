@@ -370,6 +370,79 @@ describe('ConfigureCommand', () => {
       expect(mockConfig.saveConfig).not.toHaveBeenCalled();
     });
 
+    describe('paging through versions', () => {
+      const page = (from, count) =>
+        Array.from({ length: count }, (_, i) => ({ id: `release-${from + i}` }));
+
+      it('finds a version that is past the first 50', async () => {
+        mockThemeApi.listVersions
+          .mockResolvedValueOnce(page(1, 50))
+          .mockResolvedValueOnce(page(51, 50))
+          .mockResolvedValueOnce(page(101, 20));
+
+        const result = await command.execute({ ...flags, version: 'release-115' });
+
+        expect(result.success).toBe(true);
+        expect(mockThemeApi.listVersions).toHaveBeenCalledTimes(3);
+        expect(mockThemeApi.listVersions).toHaveBeenNthCalledWith(
+          2,
+          'merchant-1',
+          { id: '12' },
+          '34',
+          { page: 2 },
+        );
+        expect(mockThemeApi.listVersions).toHaveBeenNthCalledWith(
+          3,
+          'merchant-1',
+          { id: '12' },
+          '34',
+          { page: 3 },
+        );
+        expect(mockConfig.saveConfig).toHaveBeenCalledTimes(1);
+      });
+
+      it('stops at the first page that has the version', async () => {
+        mockThemeApi.listVersions.mockResolvedValueOnce(page(1, 50));
+
+        const result = await command.execute({ ...flags, version: 'release-3' });
+
+        expect(result.success).toBe(true);
+        expect(mockThemeApi.listVersions).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses an unknown version after the last short page', async () => {
+        mockThemeApi.listVersions
+          .mockResolvedValueOnce(page(1, 50))
+          .mockResolvedValueOnce(page(51, 10));
+
+        const result = await command.execute({ ...flags, version: 'release-999' });
+
+        expect(result.error.code).toBe('UNKNOWN_VERSION');
+        expect(mockThemeApi.listVersions).toHaveBeenCalledTimes(2);
+        expect(mockConfig.saveConfig).not.toHaveBeenCalled();
+      });
+
+      it('stops when the API answers a page past the end with the first page again', async () => {
+        mockThemeApi.listVersions.mockResolvedValue(page(1, 50));
+
+        const result = await command.execute({ ...flags, version: 'release-999' });
+
+        expect(result.error.code).toBe('UNKNOWN_VERSION');
+        expect(mockThemeApi.listVersions).toHaveBeenCalledTimes(2);
+      });
+
+      it('fails and saves nothing when a later page cannot be listed', async () => {
+        mockThemeApi.listVersions
+          .mockResolvedValueOnce(page(1, 50))
+          .mockRejectedValueOnce({ status: 500, error: 'boom' });
+
+        const result = await command.execute({ ...flags, version: 'release-60' });
+
+        expect(result.error.code).toBe('CONFIG_ERROR');
+        expect(mockConfig.saveConfig).not.toHaveBeenCalled();
+      });
+    });
+
     it('matches numeric version ids by their string form', async () => {
       mockThemeApi.listVersions.mockResolvedValue([{ id: 5 }]);
 

@@ -410,6 +410,44 @@ describe('src/services/themeApi.js', () => {
       );
     });
 
+    it('should request a later page with the page query', async () => {
+      const seen = [];
+      server.use(
+        http.get(
+          'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions',
+          ({ request }) => {
+            seen.push(new URL(request.url).searchParams.get('page'));
+            return HttpResponse.json([{ id: 'v51' }]);
+          },
+        ),
+      );
+      setupThemeApi();
+      const versions = await themeApi.listVersions(
+        'merchant-123',
+        { id: 'channel-456' },
+        'theme-789',
+        { page: 2 },
+      );
+      expect(versions).toEqual([{ id: 'v51' }]);
+      expect(seen).toEqual(['2']);
+    });
+
+    it('should send no page query for the first page', async () => {
+      const seen = [];
+      server.use(
+        http.get(
+          'http://api.test.com/3.2/channels/channel-456/themes/theme-789/versions',
+          ({ request }) => {
+            seen.push(new URL(request.url).search);
+            return HttpResponse.json([]);
+          },
+        ),
+      );
+      setupThemeApi();
+      await themeApi.listVersions('merchant-123', { id: 'channel-456' }, 'theme-789');
+      expect(seen).toEqual(['']);
+    });
+
     it('should handle errors during listVersions', async () => {
       server.use(
         http.get(

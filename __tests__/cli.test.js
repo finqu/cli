@@ -64,6 +64,8 @@ vi.mock('commander', async (importOriginal) => {
     action: vi.fn().mockReturnThis(),
     command: vi.fn().mockReturnThis(),
     parseOptions: vi.fn().mockReturnThis(), // Return this for chaining
+    exitOverride: vi.fn().mockReturnThis(),
+    commands: [],
     operands: [],
     unknown: [],
     opts: vi.fn().mockReturnValue({}), // Default empty options
@@ -694,6 +696,153 @@ describe('src/cli.js', () => {
 
       expect(consoleLog).not.toHaveBeenCalled();
       expect(createFullApp).toHaveBeenCalledTimes(1);
+    });
+
+    describe('--json without --non-interactive', () => {
+      it('turns non-interactive mode on', async () => {
+        await setup({
+          opts: { json: true },
+          operands: ['theme', 'deploy', 'a.liquid'],
+        });
+
+        await runCli();
+        await settle();
+
+        expect(mockConfigManager.set).toHaveBeenCalledWith('nonInteractive', true);
+        expect(mockConfigManager.set).toHaveBeenCalledWith('json', true);
+        expect(mockLogger.setExitOnFatal).toHaveBeenCalledWith(false);
+        expect(mockLogger.setMachineOutput).toHaveBeenCalledWith(true);
+      });
+
+      it('prints a JSON line when startup fails', async () => {
+        const { createFullApp } = await import('../src/index.js');
+        await setup({
+          opts: { json: true },
+          operands: ['theme', 'delete', 'a.liquid'],
+        });
+        vi.mocked(createFullApp).mockRejectedValue(
+          Object.assign(new Error('Access token has expired'), { code: 'AUTH_ERROR' }),
+        );
+
+        await runCli();
+        await settle();
+
+        const line = stdoutWrite.mock.calls
+          .map(([chunk]) => String(chunk))
+          .find((chunk) => chunk.startsWith('{"ok"'));
+        expect(JSON.parse(line)).toMatchObject({
+          ok: false,
+          exitCode: 1,
+          error: { code: 'AUTH_ERROR' },
+        });
+        expect(process.exitCode).toBe(1);
+      });
+    });
+
+    describe('Commander usage errors', () => {
+      const usageError = (code, message, exitCode = 1) =>
+        Object.assign(new Error(message), { code, exitCode });
+
+      it('exit 2 with a USAGE_ERROR line under --json', async () => {
+        await setup({
+          opts: { json: true },
+          operands: ['theme', 'deploy', 'a.liquid'],
+        });
+        mockCommandInstance.parseAsync.mockRejectedValue(
+          usageError('commander.unknownOption', "error: unknown option '--bogus'"),
+        );
+
+        await runCli();
+        await settle();
+
+        const lines = stdoutWrite.mock.calls
+          .map(([chunk]) => String(chunk))
+          .filter((chunk) => chunk.startsWith('{"ok"'));
+        expect(lines).toHaveLength(1);
+        expect(JSON.parse(lines[0])).toEqual({
+          ok: false,
+          command: 'theme deploy',
+          exitCode: 2,
+          error: { code: 'USAGE_ERROR', message: "unknown option '--bogus'" },
+          result: null,
+        });
+        expect(process.exitCode).toBe(2);
+        expect(mockLogger.handleError).not.toHaveBeenCalled();
+      });
+
+      it('exit 2 without a JSON line under --non-interactive alone', async () => {
+        await setup({
+          opts: { nonInteractive: true },
+          operands: ['theme', 'configure'],
+        });
+        mockCommandInstance.parseAsync.mockRejectedValue(
+          usageError(
+            'commander.optionMissingArgument',
+            "error: option '--version <name>' argument missing",
+          ),
+        );
+
+        await runCli();
+        await settle();
+
+        expect(process.exitCode).toBe(2);
+        expect(
+          stdoutWrite.mock.calls.some(([chunk]) => String(chunk).startsWith('{"ok"')),
+        ).toBe(false);
+      });
+
+      it('exit 2 when Commander fails while reading the root options', async () => {
+        await setup({ argv: ['--json', '--config'], operands: [] });
+        mockCommandInstance.parseOptions.mockImplementation(() => {
+          throw usageError(
+            'commander.optionMissingArgument',
+            "error: option '-c, --config <path>' argument missing",
+          );
+        });
+
+        await runCli();
+        await settle();
+
+        const line = stdoutWrite.mock.calls
+          .map(([chunk]) => String(chunk))
+          .find((chunk) => chunk.startsWith('{"ok"'));
+        expect(JSON.parse(line)).toMatchObject({
+          ok: false,
+          command: 'startup',
+          exitCode: 2,
+          error: { code: 'USAGE_ERROR' },
+        });
+        expect(process.exitCode).toBe(2);
+      });
+
+      it('keeps Commander exit code outside machine mode', async () => {
+        await setup({ operands: ['theme', 'deploy'] });
+        mockCommandInstance.parseAsync.mockRejectedValue(
+          usageError('commander.unknownOption', "error: unknown option '--bogus'"),
+        );
+
+        await runCli();
+        await settle();
+
+        expect(process.exitCode).toBe(1);
+        expect(mockLogger.handleError).not.toHaveBeenCalled();
+        expect(stdoutWrite).not.toHaveBeenCalled();
+      });
+
+      it('exits 0 for --help even in machine mode', async () => {
+        await setup({
+          opts: { json: true },
+          operands: ['theme', 'deploy'],
+        });
+        mockCommandInstance.parseAsync.mockRejectedValue(
+          usageError('commander.helpDisplayed', '(outputHelp)', 0),
+        );
+
+        await runCli();
+        await settle();
+
+        expect(process.exitCode).toBe(0);
+      });
     });
   });
 });
