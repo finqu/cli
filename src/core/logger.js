@@ -18,6 +18,36 @@ export class Logger {
         this.seenErrors = new Set(); // Track errors to avoid duplicates
         // Nested counter: when > 0, printVerbose is suppressed (e.g. during progress UI)
         this.verboseSuspended = 0;
+        this.machineOutput = false;
+        this.exitOnFatal = true;
+    }
+
+    /**
+     * Keep stdout free for a single machine-readable result by sending all
+     * human-readable output to stderr.
+     * @param {boolean} enabled True to route output to stderr
+     */
+    setMachineOutput(enabled) {
+        this.machineOutput = !!enabled;
+    }
+
+    /**
+     * Control whether handleError() terminates the process. Non-interactive
+     * runs turn this off so the command layer can report a structured result
+     * and set the exit code itself.
+     * @param {boolean} enabled True to exit on fatal errors (default)
+     */
+    setExitOnFatal(enabled) {
+        this.exitOnFatal = !!enabled;
+    }
+
+    /**
+     * Write a line to the human-readable output stream
+     * @param {...*} args Console arguments
+     * @private
+     */
+    _log(...args) {
+        (this.machineOutput ? console.error : console.log)(...args);
     }
 
     /**
@@ -60,9 +90,9 @@ export class Logger {
         if (!this.isVerbose() || this.verboseSuspended > 0 || !items?.length) {
             return;
         }
-        console.log(chalk.dim(`  ${title}`));
+        this._log(chalk.dim(`  ${title}`));
         for (const item of items) {
-            console.log(chalk.dim(`    ${item}`));
+            this._log(chalk.dim(`    ${item}`));
         }
     }
 
@@ -119,7 +149,7 @@ export class Logger {
     printVerbose(message, data = null) {
         if (this.isVerbose() && this.verboseSuspended === 0) {
             // Print the message first
-            console.log(chalk.dim(`  ${message}`));
+            this._log(chalk.dim(`  ${message}`));
 
             // Log data only if it's meaningful and present
             if (data) {
@@ -136,7 +166,7 @@ export class Logger {
                     if (typeof data === 'object' && (data.error || data.status || data.error_description)) {
                         const summary = formatErrorMessage(data, { compact: true });
                         if (summary) {
-                            console.log(chalk.dim(`  ${summary}`));
+                            this._log(chalk.dim(`  ${summary}`));
                         }
                     }
                 }
@@ -154,11 +184,11 @@ export class Logger {
      * @param {*} data Additional data
      */
     printSuccess(message, data = null) {
-        console.log(chalk.green('✓ ') + message);
+        this._log(chalk.green('✓ ') + message);
 
         // Optional data is rarely needed in success messages for end users
         if (data && this.isVerbose()) {
-            console.log(chalk.dim(`  ${typeof data === 'object' ? this._safeStringify(data) : data}`));
+            this._log(chalk.dim(`  ${typeof data === 'object' ? this._safeStringify(data) : data}`));
         }
     }
 
@@ -168,10 +198,10 @@ export class Logger {
      * @param {*} data Additional data
      */
     printInfo(message, data = null) {
-        console.log(chalk.blue('i ') + message);
+        this._log(chalk.blue('i ') + message);
 
         if (data && this.isVerbose()) {
-            console.log(chalk.dim(`  ${typeof data === 'object' ? this._safeStringify(data) : data}`));
+            this._log(chalk.dim(`  ${typeof data === 'object' ? this._safeStringify(data) : data}`));
         }
     }
 
@@ -180,7 +210,7 @@ export class Logger {
      * @param {string} message Status message
      */
     printStatus(message) {
-        console.log(chalk.cyan('→ ') + chalk.bold(message));
+        this._log(chalk.cyan('→ ') + chalk.bold(message));
     }
 
     /**
@@ -230,7 +260,7 @@ export class Logger {
      * @param {string} message Message
      */
     print(message) {
-        console.log(`  ${message}`);
+        this._log(`  ${message}`);
     }
 
     /**
@@ -266,7 +296,9 @@ export class Logger {
             console.error(chalk.yellow('https://github.com/finqu/cli/issues'));
         }
 
-        process.exit(1);
+        if (this.exitOnFatal) {
+            process.exit(1);
+        }
     }
 }
 

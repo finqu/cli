@@ -36,6 +36,31 @@ export class BaseCommand {
   }
 
   /**
+   * Whether --non-interactive (or FINQU_NON_INTERACTIVE) is active
+   * @returns {boolean} True when prompts are forbidden
+   */
+  isNonInteractive() {
+    return this.config?.get('nonInteractive') === true;
+  }
+
+  /**
+   * Whether this run is non-interactive or prints JSON for a machine reader
+   * @returns {boolean} True when no terminal UI should be drawn
+   */
+  isMachineMode() {
+    return this.isNonInteractive() || this.config?.get('json') === true;
+  }
+
+  /**
+   * Options for ConcurrentProgress: spinners are disabled in machine mode so
+   * they never write to the stdout that carries the JSON result.
+   * @returns {Object} ConcurrentProgress options
+   */
+  progressOptions() {
+    return this.isMachineMode() ? { enabled: false } : {};
+  }
+
+  /**
    * Get command name
    * @returns {string} Command name
    */

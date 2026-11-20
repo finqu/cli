@@ -8,6 +8,7 @@ import ClientOAuth2 from 'client-oauth2';
 import terminator from 'http-terminator';
 import open from 'open';
 import dotenv from 'dotenv';
+import { AppError } from '../core/error.js';
 
 /**
  * Token Manager class
@@ -33,6 +34,19 @@ export class TokenManager {
    */
   setProfileService(profileService) {
     this.profileService = profileService;
+  }
+
+  /**
+   * Refuse to continue when a flow needs a prompt in non-interactive mode
+   * @param {string} action What was about to happen
+   * @throws {AppError} In non-interactive mode
+   */
+  assertInteractive(action) {
+    if (this.configManager.get('nonInteractive') === true) {
+      throw AppError.authError(
+        `${action}: this needs a prompt, and prompts are disabled in non-interactive mode.`,
+      );
+    }
   }
 
   hasAccessToken() {
@@ -84,6 +98,8 @@ export class TokenManager {
    * @returns {Promise<string>} New access token
    */
   async refreshToken() {
+    this.assertInteractive('Access token has expired and cannot be refreshed');
+
     this.logger.printVerbose('Refreshing access token...');
 
     const refreshToken = this.configManager.get('refreshToken');
@@ -200,6 +216,8 @@ export class TokenManager {
   async getAccessToken(key = null, secret = null, profileService = null) {
     // Use provided profile service or the one set on the instance
     const profileSvc = profileService || this.profileService;
+
+    this.assertInteractive('Sign-in is not possible');
 
     return new Promise(async (resolve, reject) => {
       // If no keys are provided directly, prompt for them

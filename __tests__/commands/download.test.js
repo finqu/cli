@@ -114,7 +114,9 @@ describe('DownloadCommand', () => {
       expect(result).toEqual({
         success: true,
         downloadedCount: 1,
+        downloaded: [source],
         errors: [],
+        skipped: [],
       });
     });
 
@@ -144,7 +146,9 @@ describe('DownloadCommand', () => {
       expect(result).toEqual({
         success: true,
         downloadedCount: 3,
+        downloaded: expect.arrayContaining(sources),
         errors: [],
+        skipped: [],
       });
     });
 

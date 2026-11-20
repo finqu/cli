@@ -65,6 +65,7 @@ export class DownloadCommand extends BaseCommand {
     try {
       let downloadedCount = 0;
       const errors = [];
+      const skipped = [];
       const downloadedPaths = [];
       const themeDir = this.config.get('themeDir');
       const downloadPaths = [];
@@ -105,6 +106,7 @@ export class DownloadCommand extends BaseCommand {
       if (downloadPaths.length > 0) {
         const progress = new ConcurrentProgress(
           Math.min(BATCH_SIZE, downloadPaths.length),
+          this.progressOptions(),
         );
 
         this.logger.suspendVerbose();
@@ -134,6 +136,8 @@ export class DownloadCommand extends BaseCommand {
                 if (success) {
                   downloadedCount++;
                   downloadedPaths.push(assetPath);
+                } else {
+                  skipped.push({ path: assetPath, reason: 'not_downloaded' });
                 }
               } catch (e) {
                 if (e.status === 404) {
@@ -189,7 +193,9 @@ export class DownloadCommand extends BaseCommand {
       return {
         success: errors.length === 0,
         downloadedCount,
+        downloaded: downloadedPaths,
         errors,
+        skipped,
       };
     } catch (err) {
       if (err instanceof AppError) {

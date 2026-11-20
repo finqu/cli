@@ -152,6 +152,9 @@ describe('DeployCommand', () => {
         deployedCount: 1,
         removedCount: 0,
         errors: [],
+        skipped: [],
+        uploaded: [source],
+        compile: { attempted: true, ok: true, error: null },
       });
     });
 
@@ -184,6 +187,9 @@ describe('DeployCommand', () => {
         deployedCount: 3,
         removedCount: 0,
         errors: [],
+        skipped: [],
+        uploaded: sources,
+        compile: { attempted: true, ok: true, error: null },
       });
     });
 

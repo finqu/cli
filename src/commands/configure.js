@@ -5,6 +5,9 @@
 import prompts from 'prompts';
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
+import { UsageError } from '../core/non-interactive.js';
+
+const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 /**
  * Derive a storefront domain hostname from channel urls[].base.
@@ -59,29 +62,69 @@ export class ConfigureCommand extends BaseCommand {
    * @returns {Array<Object>} Array of command options
    */
   get options() {
-    // No command-line options for configure, it's always interactive
-    return [];
+    return [
+      {
+        flags: '--channel <id>',
+        description: 'Sales channel id (skips the prompts, needs --theme and --version)',
+      },
+      {
+        flags: '--theme <id>',
+        description: 'Theme id (skips the prompts, needs --channel and --version)',
+      },
+      {
+        flags: '--version <name>',
+        description:
+          'Theme version (release name); must exist on the theme (skips the prompts)',
+      },
+      {
+        flags: '--resource-url <url>',
+        description: 'API host to use instead of the one stored by sign-in',
+      },
+    ];
   }
 
   /**
    * Execute the configure command
    * @param {Object} options Command options
-   * @param {string} options.configPath Path to the configuration file (optional)
+   * @param {string} [options.channel] Sales channel id
+   * @param {string} [options.theme] Theme id
+   * @param {string} [options.version] Theme version (release name)
+   * @param {string} [options.resourceUrl] API host
    * @returns {Promise<Object>} Command result
    */
-  async execute(options) {
-    // configPath validation removed as it's provided by default in CLI
+  async execute(options = {}) {
     this.logger.printStatus('Configuring theme...');
 
     try {
-      // Prompt for store or theme configuration
-      await this.promptForConfigType(options);
+      if (options.resourceUrl !== undefined) {
+        this.config.set('resourceUrl', this.parseResourceUrl(options.resourceUrl), true);
+      }
 
-      // Save configuration
+      const usesFlags = ['channel', 'theme', 'version'].some(
+        (key) => options[key] !== undefined,
+      );
+
+      if (usesFlags || this.isNonInteractive()) {
+        await this.configureFromFlags(options);
+      } else {
+        await this.promptForConfigType(options);
+      }
+
       await this.config.saveConfig();
 
       this.logger.printSuccess('Configuration completed successfully');
-      return { success: true };
+      const store = this.config.get('store');
+      return {
+        success: true,
+        store: store
+          ? {
+              channelId: store.id,
+              themeId: store.themeId,
+              version: store.versionId,
+              resourceUrl: this.config.get('resourceUrl'),
+            }
+          : undefined,
+      };
     } catch (err) {
       if (err instanceof AppError) {
         this.logger.printError(err.message);
@@ -91,6 +134,108 @@ export class ConfigureCommand extends BaseCommand {
       this.logger.handleError(err);
       return { success: false, error: err };
     }
+  }
+
+  /**
+   * Validate and normalize an API host given with --resource-url
+   * @param {string} value Raw flag value
+   * @returns {string} URL without a trailing slash
+   * @throws {UsageError} When the value is not a plain http(s) URL
+   * @private
+   */
+  parseResourceUrl(value) {
+    let url;
+    try {
+      url = new URL(String(value));
+    } catch {
+      throw new UsageError('--resource-url is not a valid URL');
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new UsageError(
+        '--resource-url must be an http(s) URL without credentials',
+      );
+    }
+    return url.href.replace(/\/+$/, '');
+  }
+
+  /**
+   * Configure from --channel, --theme and --version without any prompt.
+   * The version must be one the API lists for the theme, so a typo or a
+   * release the caller may not use is refused before anything is saved.
+   * @param {Object} options Command options
+   * @returns {Promise<void>}
+   * @throws {UsageError} When a flag is missing or malformed
+   * @throws {AppError} When the version is unknown or cannot be checked
+   * @private
+   */
+  async configureFromFlags(options) {
+    const required = [
+      ['channel', '--channel'],
+      ['theme', '--theme'],
+      ['version', '--version'],
+    ];
+    const missing = required
+      .filter(([key]) => !options[key])
+      .map(([, flag]) => flag);
+    if (missing.length > 0) {
+      throw new UsageError(
+        `Missing ${missing.join(', ')}. Without prompts, theme configure needs --channel, --theme and --version.`,
+      );
+    }
+
+    const channel = String(options.channel);
+    const theme = String(options.theme);
+    const version = String(options.version);
+
+    // Both ids are placed into API paths, so only plain identifiers pass.
+    for (const [flag, value] of [
+      ['--channel', channel],
+      ['--theme', theme],
+    ]) {
+      if (!ID_PATTERN.test(value) || /^\.+$/.test(value)) {
+        throw new UsageError(`${flag} is not a valid id: ${value}`);
+      }
+    }
+
+    const merchantId = this.config.get('merchant');
+    const previous = this.config.get('store');
+
+    let versions;
+    try {
+      versions = await this.app.services.themeApi.listVersions(
+        merchantId,
+        { id: channel },
+        theme,
+      );
+    } catch (err) {
+      throw AppError.configError(
+        `Could not list versions of theme ${theme} on channel ${channel}`,
+        err,
+      );
+    }
+
+    if (!Array.isArray(versions) || !versions.some((v) => String(v.id) === version)) {
+      throw new AppError(
+        `Unknown version "${version}" for theme ${theme} on channel ${channel}`,
+        'UNKNOWN_VERSION',
+      );
+    }
+
+    // The stored domain belongs to the previous channel.
+    if (previous?.id !== undefined && String(previous.id) !== channel) {
+      this.config.remove('storeDomain');
+    }
+
+    this.config.set(
+      'store',
+      {
+        merchantId: merchantId ?? previous?.merchantId,
+        id: channel,
+        themeId: theme,
+        versionId: version,
+      },
+      true,
+    );
   }
 
   /**

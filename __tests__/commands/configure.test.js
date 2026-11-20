@@ -82,8 +82,13 @@ describe('ConfigureCommand', () => {
       expect(command.description).toBe('Configure Finqu theme configuration.');
     });
 
-    it('should have empty options array', () => {
-      expect(command.options).toEqual([]);
+    it('should offer the flags that replace the prompts', () => {
+      expect(command.options.map((o) => o.flags)).toEqual([
+        '--channel <id>',
+        '--theme <id>',
+        '--version <name>',
+        '--resource-url <url>',
+      ]);
     });
 
     it('should belong to the theme group', () => {
@@ -304,6 +309,175 @@ describe('ConfigureCommand', () => {
       await expect(command.configureForStore({})).rejects.toThrow(
         'Failed to configure store',
       );
+    });
+  });
+  describe('execute() with flags', () => {
+    const flags = { channel: '12', theme: '34', version: 'release-1' };
+    let values;
+
+    beforeEach(() => {
+      values = { merchant: 'merchant-1' };
+      mockConfig.get.mockImplementation((key, fallback = null) =>
+        key in values ? values[key] : fallback,
+      );
+      mockThemeApi.listVersions.mockResolvedValue([
+        { id: 'release-0' },
+        { id: 'release-1' },
+      ]);
+    });
+
+    it('stores the target without prompting or listing stores', async () => {
+      const result = await command.execute(flags);
+
+      expect(prompts).not.toHaveBeenCalled();
+      expect(mockThemeApi.listStores).not.toHaveBeenCalled();
+      expect(mockThemeApi.listThemes).not.toHaveBeenCalled();
+      expect(mockThemeApi.listVersions).toHaveBeenCalledWith(
+        'merchant-1',
+        { id: '12' },
+        '34',
+      );
+      expect(mockConfig.set).toHaveBeenCalledWith(
+        'store',
+        {
+          merchantId: 'merchant-1',
+          id: '12',
+          themeId: '34',
+          versionId: 'release-1',
+        },
+        true,
+      );
+      expect(mockConfig.saveConfig).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+    });
+
+    it('refuses a version the theme does not have and saves nothing', async () => {
+      const result = await command.execute({ ...flags, version: 'release-9' });
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('UNKNOWN_VERSION');
+      expect(result.error.message).toContain('release-9');
+      expect(mockConfig.set).not.toHaveBeenCalled();
+      expect(mockConfig.saveConfig).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the API lists no versions', async () => {
+      mockThemeApi.listVersions.mockResolvedValue(undefined);
+
+      const result = await command.execute(flags);
+
+      expect(result.error.code).toBe('UNKNOWN_VERSION');
+      expect(mockConfig.saveConfig).not.toHaveBeenCalled();
+    });
+
+    it('matches numeric version ids by their string form', async () => {
+      mockThemeApi.listVersions.mockResolvedValue([{ id: 5 }]);
+
+      const result = await command.execute({ ...flags, version: '5' });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('fails and saves nothing when the versions cannot be listed', async () => {
+      mockThemeApi.listVersions.mockRejectedValue({ status: 404, error: 'Not found' });
+
+      const result = await command.execute(flags);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_ERROR');
+      expect(mockConfig.saveConfig).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ channel: '12' }, '--theme, --version'],
+      [{ theme: '34', version: 'release-1' }, '--channel'],
+    ])('rejects partial flags %j without prompting', async (partial, missing) => {
+      const result = await command.execute(partial);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('USAGE_ERROR');
+      expect(result.error.message).toContain(missing);
+      expect(prompts).not.toHaveBeenCalled();
+      expect(mockThemeApi.listStores).not.toHaveBeenCalled();
+    });
+
+    it.each([['../x'], ['a/b'], ['..'], ['a b']])(
+      'rejects the id %s before calling the API',
+      async (id) => {
+        const bad = await command.execute({ ...flags, channel: id });
+        const badTheme = await command.execute({ ...flags, theme: id });
+
+        expect(bad.error.code).toBe('USAGE_ERROR');
+        expect(badTheme.error.code).toBe('USAGE_ERROR');
+        expect(mockThemeApi.listVersions).not.toHaveBeenCalled();
+      },
+    );
+
+    it('clears the stored domain when the channel changes', async () => {
+      values.store = { id: '99', themeId: '1', versionId: 'v', domain: 'old.example.test' };
+
+      await command.execute(flags);
+
+      expect(mockConfig.remove).toHaveBeenCalledWith('storeDomain');
+    });
+
+    it('keeps the stored domain when the channel is the same', async () => {
+      values.store = { id: 12, themeId: '1', versionId: 'v', domain: 'shop.example.test' };
+
+      await command.execute(flags);
+
+      expect(mockConfig.remove).not.toHaveBeenCalled();
+    });
+
+    describe('in non-interactive mode', () => {
+      beforeEach(() => {
+        values.nonInteractive = true;
+      });
+
+      it('never prompts and reports a usage error when no flag is given', async () => {
+        const result = await command.execute({});
+
+        expect(result.success).toBe(false);
+        expect(result.error.code).toBe('USAGE_ERROR');
+        expect(prompts).not.toHaveBeenCalled();
+        expect(mockThemeApi.listStores).not.toHaveBeenCalled();
+      });
+
+      it('configures from the flags', async () => {
+        const result = await command.execute(flags);
+
+        expect(result.success).toBe(true);
+        expect(prompts).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('--resource-url', () => {
+      it('stores the host without a trailing slash', async () => {
+        await command.execute({ ...flags, resourceUrl: 'https://api.example.test/' });
+
+        expect(mockConfig.set).toHaveBeenCalledWith('resourceUrl', 'https://api.example.test', true);
+      });
+
+      it.each([
+        ['not a url'],
+        ['ftp://api.example.test'],
+        ['https://user:pass@api.example.test'],
+      ])('rejects %s', async (url) => {
+        const result = await command.execute({ ...flags, resourceUrl: url });
+
+        expect(result.error.code).toBe('USAGE_ERROR');
+        expect(mockConfig.set).not.toHaveBeenCalled();
+        expect(mockThemeApi.listVersions).not.toHaveBeenCalled();
+      });
+
+      it('does not leak the credentials of a rejected URL into the message', async () => {
+        const result = await command.execute({
+          ...flags,
+          resourceUrl: 'https://user:secret-pass@api.example.test',
+        });
+
+        expect(result.error.message).not.toContain('secret-pass');
+      });
     });
   });
 });

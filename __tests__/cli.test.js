@@ -64,6 +64,8 @@ vi.mock('commander', async (importOriginal) => {
     action: vi.fn().mockReturnThis(),
     command: vi.fn().mockReturnThis(),
     parseOptions: vi.fn().mockReturnThis(), // Return this for chaining
+    operands: [],
+    unknown: [],
     opts: vi.fn().mockReturnValue({}), // Default empty options
     parseAsync: vi.fn().mockResolvedValue(undefined),
     _parseOptionsResult: {
@@ -495,5 +497,203 @@ describe('src/cli.js', () => {
         message: expect.stringContaining('Invalid theme directory'),
       }),
     );
+  });
+  describe('non-interactive mode', () => {
+    let mockLogger;
+    let mockConfigManager;
+
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    const setup = async ({ opts = {}, operands = [], argv } = {}) => {
+      const { createLogger } = await import('../src/core/logger.js');
+      const { createConfigManager } = await import('../src/core/config.js');
+      mockLogger = {
+        setVerbose: vi.fn(),
+        setMachineOutput: vi.fn(),
+        setExitOnFatal: vi.fn(),
+        printError: vi.fn(),
+        handleError: vi.fn(),
+      };
+      mockConfigManager = {
+        get: vi.fn((key, defaultValue) =>
+          key === 'themeDir' ? '/theme' : defaultValue,
+        ),
+        set: vi.fn(),
+      };
+      vi.mocked(createLogger).mockReturnValue(mockLogger);
+      vi.mocked(createConfigManager).mockResolvedValue(mockConfigManager);
+
+      const { createFullApp } = await import('../src/index.js');
+      vi.mocked(createFullApp).mockResolvedValue({
+        commands: { registerCommands: vi.fn() },
+      });
+
+      const { createFileSystem } = await import('../src/io/fileSystem.js');
+      createFileSystem().validateDirectory.mockResolvedValue({
+        valid: true,
+        error: null,
+      });
+
+      const allOpts = { config: 'default.json', ...opts };
+      mockCommandInstance.opts.mockReturnValue(allOpts);
+      mockCommandInstance._parseOptionsResult = { opts: allOpts };
+      mockCommandInstance.operands = ['node', 'finqu', ...operands];
+      if (argv) {
+        process.argv = ['node', 'finqu', ...argv];
+      }
+    };
+
+    let stdoutWrite;
+    let consoleLog;
+
+    beforeEach(() => {
+      process.exitCode = undefined;
+      stdoutWrite = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true);
+      consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      process.exitCode = undefined;
+      delete process.env.FINQU_NON_INTERACTIVE;
+      stdoutWrite.mockRestore();
+      consoleLog.mockRestore();
+    });
+
+    it('refuses app dev before reading config or building the app', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      const { createConfigManager } = await import('../src/core/config.js');
+      await setup({ opts: { nonInteractive: true }, operands: ['app', 'dev'] });
+
+      await runCli();
+      await settle();
+
+      expect(mockLogger.printError).toHaveBeenCalledWith(
+        expect.stringContaining('"app dev" is not available in non-interactive mode'),
+      );
+      expect(createConfigManager).not.toHaveBeenCalled();
+      expect(createFullApp).not.toHaveBeenCalled();
+      expect(mockCommandInstance.parseAsync).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    });
+
+    it('refuses sign-in', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({ opts: { nonInteractive: true }, operands: ['sign-in'] });
+
+      await runCli();
+      await settle();
+
+      expect(createFullApp).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    });
+
+    it('prints a JSON refusal on stdout with --json', async () => {
+      await setup({
+        opts: { nonInteractive: true, json: true },
+        operands: ['theme', 'dev'],
+      });
+
+      await runCli();
+      await settle();
+
+      expect(mockLogger.setMachineOutput).toHaveBeenCalledWith(true);
+      const line = stdoutWrite.mock.calls
+        .map(([chunk]) => String(chunk))
+        .find((chunk) => chunk.startsWith('{"ok"'));
+      expect(JSON.parse(line)).toMatchObject({
+        ok: false,
+        command: 'theme dev',
+        exitCode: 2,
+        error: { code: 'COMMAND_REFUSED' },
+      });
+    });
+
+    it('lets an allowed command through and switches the mode on', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({
+        opts: { nonInteractive: true },
+        operands: ['theme', 'deploy', 'a.liquid'],
+      });
+
+      await runCli();
+      await settle();
+
+      expect(createFullApp).toHaveBeenCalledTimes(1);
+      expect(mockLogger.setExitOnFatal).toHaveBeenCalledWith(false);
+      expect(mockConfigManager.set).toHaveBeenCalledWith('nonInteractive', true);
+      expect(mockConfigManager.set).toHaveBeenCalledWith('json', false);
+      await vi.waitFor(() =>
+        expect(mockCommandInstance.parseAsync).toHaveBeenCalledTimes(1),
+      );
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('is switched on by FINQU_NON_INTERACTIVE=1 without the flag', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      process.env.FINQU_NON_INTERACTIVE = '1';
+      await setup({ operands: ['app', 'dev'] });
+
+      await runCli();
+      await settle();
+
+      expect(createFullApp).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    });
+
+    it('does not change an ordinary run', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({ operands: ['app', 'dev'] });
+
+      await runCli();
+      await settle();
+
+      expect(createFullApp).toHaveBeenCalledTimes(1);
+      expect(mockLogger.setExitOnFatal).not.toHaveBeenCalled();
+      expect(mockLogger.setMachineOutput).not.toHaveBeenCalled();
+      expect(mockConfigManager.set).toHaveBeenCalledWith('nonInteractive', false);
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('sets exit code 1 for a startup failure instead of exiting', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({
+        opts: { nonInteractive: true },
+        operands: ['theme', 'deploy'],
+      });
+      vi.mocked(createFullApp).mockRejectedValue(new Error('startup failed'));
+
+      await runCli();
+      await settle();
+
+      expect(mockLogger.handleError).toHaveBeenCalledTimes(1);
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('prints the CLI version for --version before a command', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({ argv: ['--version'] });
+
+      await runCli();
+      await settle();
+
+      expect(consoleLog).toHaveBeenCalledWith(expect.stringMatching(/^\d+\.\d+\.\d+/));
+      expect(createFullApp).not.toHaveBeenCalled();
+    });
+
+    it('leaves --version to theme configure', async () => {
+      const { createFullApp } = await import('../src/index.js');
+      await setup({
+        argv: ['theme', 'configure', '--channel', '1', '--theme', '2', '--version', 'release-1'],
+        operands: ['theme', 'configure'],
+      });
+
+      await runCli();
+      await settle();
+
+      expect(consoleLog).not.toHaveBeenCalled();
+      expect(createFullApp).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -76,8 +76,10 @@ These global options can be used with any command:
 | --------------------- | ------------------------------ | -------- |
 | `-v, --verbose`       | Enable detailed logging output | `false`  |
 | `-c, --config <path>` | Path to the configuration file | `./.env` |
+| `--non-interactive`   | Never prompt; see [Non-interactive mode](#non-interactive-mode) | `false` |
+| `--json`              | Print one JSON result line on stdout (theme download, deploy, delete and configure) | `false` |
 | `--help`              | Display help information       |          |
-| `--version`           | Display version information    |          |
+| `--version`           | Display version information (only before a command; `theme configure` has its own `--version <name>`) |          |
 
 ### Authentication
 
@@ -360,6 +362,14 @@ This interactive command walks you through:
 1. Selecting a theme to work with
 2. Saving the configuration to your configuration file
 
+To skip the prompts, pass the target as flags:
+
+```bash
+finqu theme configure --channel <id> --theme <id> --version <name> [--resource-url <url>]
+```
+
+The version must be one that the API lists for the theme, otherwise the command fails and saves nothing. `--resource-url` sets the API host in place of the one stored by `sign-in`.
+
 #### download
 
 Download theme assets from the connected Finqu theme:
@@ -559,6 +569,24 @@ This command provides a complete development experience:
 
 If the specified port is already in use, the command will automatically find and use the next available port.
 
+## Non-interactive mode
+
+For scripts and sandboxes, `--non-interactive` (or `FINQU_NON_INTERACTIVE=1`) guarantees that the CLI never prompts. Only `theme download`, `theme deploy`, `theme delete` and `theme configure` are allowed; every other command, including `sign-in`, `app dev` and `theme dev`, is refused.
+
+If `.env` holds no access token, the CLI makes no token check at startup, no refresh call and sends no `Authorization` header, which suits an environment where a proxy adds it. An expired token fails the run instead of asking for credentials.
+
+| Exit code | Meaning                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `0`       | Everything succeeded                                                                     |
+| `1`       | A file failed or was skipped (for example over 10 MB), the compile failed, or the command errored |
+| `2`       | The command was refused, or a flag is missing or invalid                                 |
+
+With `--json`, the result is one line on stdout and all other output goes to stderr:
+
+```json
+{"ok":true,"command":"theme deploy","exitCode":0,"error":null,"result":{"deployedCount":1,"removedCount":0,"uploaded":["templates/index.liquid"],"failed":[],"skipped":[],"compile":{"attempted":true,"ok":true,"error":null}}}
+```
+
 ## Environment Variables
 
 Finqu CLI supports the following environment variables:
@@ -566,6 +594,7 @@ Finqu CLI supports the following environment variables:
 | Variable                  | Description                                                                 |
 | ------------------------- | --------------------------------------------------------------------------- |
 | `FINQU_CONFIG`            | Override the default configuration file path                                |
+| `FINQU_NON_INTERACTIVE`   | Set to `1` (or `true`) to enable `--non-interactive`                        |
 | `FINQU_API_CLIENT_ID`     | API Client key to use for authentication (alternative to using --key)       |
 | `FINQU_API_CLIENT_SECRET` | API Client secret to use for authentication (alternative to using --secret) |
 

@@ -82,6 +82,7 @@ export class DeleteCommand extends BaseCommand {
 
       const progress = new ConcurrentProgress(
         Math.min(BATCH_SIZE, sources.length),
+        this.progressOptions(),
       );
 
       this.logger.suspendVerbose();
@@ -125,11 +126,23 @@ export class DeleteCommand extends BaseCommand {
       }
 
       const shouldCompile = options.compile !== false;
+      let compiled = false;
+      let compileError = null;
 
       if (shouldCompile && deletedCount > 0) {
         this.logger.printStatus('Compiling assets on theme...');
-        await this.app.services.themeApi.compileAssets();
-        this.logger.printSuccess('Asset compilation triggered.');
+        try {
+          await this.app.services.themeApi.compileAssets();
+          this.logger.printSuccess('Asset compilation triggered.');
+          compiled = true;
+        } catch (e) {
+          // Same contract as deploy: interactive runs abort, non-interactive
+          // runs report the failed compile in the result.
+          if (!this.isNonInteractive()) {
+            throw e;
+          }
+          compileError = e;
+        }
       } else if (shouldCompile && deletedCount === 0) {
         this.logger.printInfo('No assets deleted, skipping compilation.');
       } else {
@@ -137,7 +150,17 @@ export class DeleteCommand extends BaseCommand {
       }
 
       this.logger.printSuccess(`Successfully deleted ${deletedCount} files`);
-      return { success: errors.length === 0, deletedCount, errors };
+      return {
+        success: errors.length === 0 && !compileError,
+        deletedCount,
+        deleted: deletedPaths,
+        errors,
+        compile: {
+          attempted: shouldCompile && deletedCount > 0,
+          ok: compiled,
+          error: compileError,
+        },
+      };
     } catch (err) {
       if (err instanceof AppError) {
         this.logger.printError(err.message);

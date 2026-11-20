@@ -428,6 +428,8 @@ export class ThemeApi {
    * @param {Object} [options] Transfer options
    * @param {boolean} [options.quiet] Suppress per-file status/success logs
    * @param {Function} [options.onStatus] Status callback for progress UI
+   * @param {Function} [options.onSkip] Called with `{ reason }` when the file is
+   *   not uploaded and no error is thrown (`too_large` or `not_a_file`)
    * @returns {Promise<boolean>} True if upload was successful
    */
   async uploadAsset(assetName, filePath, fileSystem, options = {}) {
@@ -465,6 +467,7 @@ export class ThemeApi {
             `Asset ${assetName} is directory, skipping sync`,
           );
         }
+        options.onSkip?.({ reason: 'not_a_file' });
         return false;
       }
       // File size check (e.g., 10MB limit)
@@ -473,6 +476,7 @@ export class ThemeApi {
         this.logger.printError(
           `File ${assetName} is too large to upload (${(stats.size / 1024 / 1024).toFixed(2)} MB). Skipping.`,
         );
+        options.onSkip?.({ reason: 'too_large' });
         return false;
       }
     } catch (err) {

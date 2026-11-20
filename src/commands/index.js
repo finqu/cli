@@ -30,6 +30,14 @@ import { createAppRotateSecretCommand } from './app-rotate-secret.js';
 import { createAppReplayCommand } from './app-replay.js';
 import { createMigrateCommand } from './migrate.js';
 import { COMMAND_GROUPS } from '../core/command-groups.js';
+import {
+  EXIT_CODES,
+  buildEnvelope,
+  commandKey,
+  exitCodeFor,
+  printEnvelope,
+  refusalMessage,
+} from '../core/non-interactive.js';
 
 /**
  * Command Registry class for managing commands
@@ -142,8 +150,59 @@ export class CommandRegistry {
           `Command ${name} requires an app instance to be set first`,
         );
       }
-      return cmd.execute(...args);
+      return this._runCommand(cmd, args);
     });
+  }
+
+  /**
+   * Run a command. Plain runs are unchanged. In non-interactive or --json
+   * mode the command must be on the allowlist, and the outcome becomes the
+   * process exit code and, with --json, one JSON line on stdout.
+   * @param {Object} cmd Command instance
+   * @param {Array} args Arguments from Commander
+   * @returns {Promise<Object>} Command result
+   * @private
+   */
+  async _runCommand(cmd, args) {
+    const config = this.app.config;
+    const nonInteractive = config?.get('nonInteractive') === true;
+    const json = config?.get('json') === true;
+
+    if (!nonInteractive && !json) {
+      return cmd.execute(...args);
+    }
+
+    const key = commandKey(cmd.group, cmd.name);
+    const refusal = refusalMessage(key, { nonInteractive, json });
+    if (refusal) {
+      this.app.logger.printError(refusal);
+      if (json) {
+        printEnvelope({
+          ok: false,
+          command: key,
+          exitCode: EXIT_CODES.REFUSED,
+          error: { code: 'COMMAND_REFUSED', message: refusal },
+          result: null,
+        });
+      }
+      process.exitCode = EXIT_CODES.REFUSED;
+      return undefined;
+    }
+
+    let result;
+    let thrown;
+    try {
+      result = await cmd.execute(...args);
+    } catch (err) {
+      thrown = err;
+      this.app.logger.handleError(err);
+    }
+
+    process.exitCode = exitCodeFor(result, thrown);
+    if (json) {
+      printEnvelope(buildEnvelope(key, result, thrown));
+    }
+    return result;
   }
 
   /**

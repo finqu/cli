@@ -153,7 +153,9 @@ export class DeployCommand extends BaseCommand {
       let deployedCount = 0;
       let removedCount = 0;
       let compiled = false;
+      let compileError = null;
       const errors = [];
+      const skipped = [];
       const themeDir = this.config.get('themeDir');
       const themeApi = this.app.services.themeApi;
 
@@ -196,6 +198,7 @@ export class DeployCommand extends BaseCommand {
           const deletedPaths = [];
           const deleteProgress = new ConcurrentProgress(
             Math.min(BATCH_SIZE, toDelete.length),
+            this.progressOptions(),
           );
           this.logger.suspendVerbose();
           try {
@@ -267,6 +270,11 @@ export class DeployCommand extends BaseCommand {
           if (stats.isFile()) {
             if (!this._shouldSkipUpload(source, options)) {
               uploadPaths.push(source);
+            } else {
+              // A file named on the command line that is not uploaded must be
+              // visible to automation; excluded files found by a directory
+              // walk are ordinary exclusions and stay silent.
+              skipped.push({ path: source, reason: 'excluded' });
             }
           } else if (stats.isDirectory()) {
             const dirFiles = await this.fileSystem.getFiles(fullPath);
@@ -312,6 +320,7 @@ export class DeployCommand extends BaseCommand {
       if (uploadPaths.length > 0) {
         const uploadProgress = new ConcurrentProgress(
           Math.min(BATCH_SIZE, uploadPaths.length),
+          this.progressOptions(),
         );
         this.logger.suspendVerbose();
         try {
@@ -322,6 +331,7 @@ export class DeployCommand extends BaseCommand {
               try {
                 const filePath = path.join(themeDir, relativePath);
 
+                let skipReason = 'not_uploaded';
                 const success = await themeApi.uploadAsset(
                   relativePath,
                   filePath,
@@ -329,12 +339,17 @@ export class DeployCommand extends BaseCommand {
                   {
                     quiet: true,
                     onStatus: (msg) => uploadProgress.update(slot, msg),
+                    onSkip: ({ reason }) => {
+                      skipReason = reason;
+                    },
                   },
                 );
 
                 if (success !== false) {
                   deployedCount++;
                   uploadedPaths.push(relativePath);
+                } else {
+                  skipped.push({ path: relativePath, reason: skipReason });
                 }
               } catch (e) {
                 errors.push({
@@ -370,6 +385,14 @@ export class DeployCommand extends BaseCommand {
         }
       }
 
+      if (this.isMachineMode()) {
+        for (const entry of skipped) {
+          this.logger.printError(
+            `Skipped asset: ${entry.path} (${entry.reason})`,
+          );
+        }
+      }
+
       if (errors.length > 0) {
         this.logger.printVerboseList(
           'Failed transfers:',
@@ -384,9 +407,19 @@ export class DeployCommand extends BaseCommand {
       const shouldCompile = options.compile !== false;
       if (shouldCompile && deployedCount > 0) {
         this.logger.printStatus('Compiling assets on theme...');
-        await themeApi.compileAssets();
-        this.logger.printSuccess('Asset compilation triggered.');
-        compiled = true;
+        try {
+          await themeApi.compileAssets();
+          this.logger.printSuccess('Asset compilation triggered.');
+          compiled = true;
+        } catch (e) {
+          // Interactive runs keep aborting on a failed compile. A
+          // non-interactive run reports it in the result instead, so the
+          // uploaded files stay visible to the caller.
+          if (!this.isNonInteractive()) {
+            throw e;
+          }
+          compileError = e;
+        }
       } else if (shouldCompile && deployedCount === 0) {
         this.logger.printInfo('No assets uploaded, skipping compilation.');
       } else {
@@ -429,10 +462,17 @@ export class DeployCommand extends BaseCommand {
       );
 
       return {
-        success: errors.length === 0,
+        success: errors.length === 0 && !compileError,
         deployedCount,
         removedCount,
         errors,
+        skipped,
+        uploaded: uploadedPaths,
+        compile: {
+          attempted: shouldCompile && deployedCount > 0,
+          ok: compiled,
+          error: compileError,
+        },
       };
     } catch (err) {
       if (err instanceof AppError) {
