@@ -25,6 +25,7 @@ function createConfig(values) {
 
 function createFileSystem(overrides = {}) {
   return {
+    lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false }),
     stat: vi.fn().mockResolvedValue({
       isFile: () => true,
       isDirectory: () => false,

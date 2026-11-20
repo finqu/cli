@@ -424,7 +424,10 @@ export class ThemeApi {
    * @param {boolean} [options.quiet] Suppress per-file status/success logs
    * @param {Function} [options.onStatus] Status callback for progress UI
    * @param {Function} [options.onSkip] Called with `{ reason }` when the file is
-   *   not uploaded and no error is thrown (`too_large` or `not_a_file`)
+   *   not uploaded and no error is thrown (`too_large`, `not_a_file` or
+   *   `symlink`)
+   * @param {string} [options.rootDir] Theme directory; when given, symbolic
+   *   links in any directory between it and the file are refused too
    * @returns {Promise<boolean>} True if upload was successful
    */
   async uploadAsset(assetName, filePath, fileSystem, options = {}) {
@@ -454,6 +457,33 @@ export class ThemeApi {
     }
 
     try {
+      // A symbolic link, or a file under one, is never followed: its target
+      // can be anywhere, including a credential file.
+      const probes = [];
+      if (options.rootDir) {
+        let probe = options.rootDir;
+        for (const segment of path
+          .relative(options.rootDir, filePath)
+          .split(path.sep)) {
+          probe = path.join(probe, segment);
+          probes.push(probe);
+        }
+      } else {
+        probes.push(filePath);
+      }
+      for (const candidate of probes) {
+        const linkStats = await fileSystem.lstat(candidate);
+        if (linkStats.isSymbolicLink()) {
+          if (!quiet) {
+            this.logger.printError(
+              `Refusing to upload symbolic link: ${assetName}`,
+            );
+          }
+          options.onSkip?.({ reason: 'symlink' });
+          return false;
+        }
+      }
+
       // Check if file exists and is a file
       const stats = await fileSystem.stat(filePath);
       if (!stats.isFile()) {

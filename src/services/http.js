@@ -3,6 +3,7 @@
  * Abstracts HTTP requests for better testability
  */
 import { PassThrough } from 'stream';
+import zlib from 'zlib';
 import request from 'request';
 
 /**
@@ -158,9 +159,37 @@ export class HttpClient {
             return;
           }
 
+          // `request` inflates gzip and deflate itself; brotli is decoded here.
+          // A body in any other encoding would be saved as undecoded bytes, so
+          // it fails instead.
+          const encoding = String(res.headers['content-encoding'] || '')
+            .trim()
+            .toLowerCase();
+          const requestInflates = finalOptions.gzip;
+          const supported =
+            encoding === '' ||
+            encoding === 'identity' ||
+            encoding === 'br' ||
+            (requestInflates && (encoding === 'gzip' || encoding === 'deflate'));
+          if (!supported) {
+            state = 'rejected';
+            req.abort();
+            reject({
+              status: res.statusCode,
+              error: `Unsupported Content-Encoding: ${encoding}`,
+            });
+            return;
+          }
+
           // Piping must start in the same tick as the response, or the first
           // chunks are lost.
-          req.pipe(body);
+          if (encoding === 'br') {
+            const decoder = zlib.createBrotliDecompress();
+            decoder.on('error', (err) => body.destroy(err));
+            req.pipe(decoder).pipe(body);
+          } else {
+            req.pipe(body);
+          }
           state = 'resolved';
           resolve(body);
         });

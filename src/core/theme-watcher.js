@@ -97,7 +97,7 @@ export class ThemeWatcher {
                 relativePath,
                 path.join(this.themeDir, relativePath),
                 this.fileSystem,
-                { quiet: true },
+                { quiet: true, rootDir: this.themeDir },
               )
               .then((success) => {
                 if (success !== false) {

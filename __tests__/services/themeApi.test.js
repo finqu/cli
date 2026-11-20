@@ -74,6 +74,7 @@ class MockWritable extends Writable {
 const mockFileSystem = {
   createWriteStream: vi.fn(() => new MockWritable()),
   exists: vi.fn().mockResolvedValue(true),
+  lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false }),
   stat: vi.fn().mockResolvedValue({ isFile: () => true, size: 1024 }),
   mkdir: vi.fn().mockResolvedValue(undefined),
   readFile: vi.fn().mockResolvedValue('file content'),

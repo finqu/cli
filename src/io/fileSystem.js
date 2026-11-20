@@ -7,10 +7,21 @@ import {
 import path from 'path';
 
 /**
- * Files the CLI keeps credentials and session data in: .env and .env.*, plus
- * the .finqu-* files it writes (webhook buffer, dev session).
+ * Paths that never leave the machine through deploy, watch or dev. Matched
+ * case-insensitively against the path with `/` separators, at any depth.
+ * Covers the CLI's own credential files (.env, .env.*, .finqu-*), package
+ * manager and VCS credentials, cloud and SSH key material, private keys and
+ * certificates, web server auth files and .git.
  */
-const CREDENTIAL_FILE = /^\.(env(\..*)?|finqu-.*)$/i;
+export const SENSITIVE_PATH_PATTERNS = [
+  /(^|\/)\.(env(\..*)?|finqu-[^/]*)(\/|$)/,
+  /(^|\/)\.(npmrc|yarnrc|yarnrc\.yml|netrc|git-credentials|pgpass)(\/|$)/,
+  /(^|\/)\.(aws|ssh|gnupg|kube|git)(\/|$)/,
+  /(^|\/)\.docker\/config\.json(\/|$)/,
+  /(^|\/)id_(rsa|ed25519)[^/]*(\/|$)/,
+  /\.(pem|key|p12|pfx)(\/|$)/,
+  /(^|\/)\.(htaccess|htpasswd)(\/|$)/,
+];
 
 /**
  * FileSystem abstraction layer
@@ -76,6 +87,15 @@ export class FileSystem {
   }
 
   /**
+   * Gets file stats without following a symbolic link
+   * @param {string} filePath Path to check
+   * @returns {Promise<fs.Stats>} File stats
+   */
+  async lstat(filePath) {
+    return fs.lstat(filePath);
+  }
+
+  /**
    * Creates a read stream
    * @param {string} filePath Path to read
    * @returns {fs.ReadStream} Read stream
@@ -118,10 +138,8 @@ export class FileSystem {
    * @returns {boolean} Whether path should be included
    */
   checkPath(filePath) {
-    // A top-level .env passes the hidden-path test below, which needs a
-    // separator before the dot.
-    const segments = filePath.split(/[\\/]+/);
-    if (segments.some((segment) => CREDENTIAL_FILE.test(segment))) {
+    const normalized = filePath.replace(/[\\/]+/g, '/').toLowerCase();
+    if (SENSITIVE_PATH_PATTERNS.some((re) => re.test(normalized))) {
       return false;
     }
     // Hidden files and directories
@@ -201,6 +219,9 @@ export class FileSystem {
     const files = await Promise.all(
       dirents.map(async (dirent) => {
         const res = path.resolve(dir, dirent.name);
+        // Dirent reports a symbolic link as neither file nor directory, so a
+        // link is returned as a leaf and never walked into; the caller skips
+        // and reports it.
         if (dirent.isDirectory()) {
           return this.getFiles(res);
         } else {

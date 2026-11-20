@@ -275,8 +275,10 @@ export class DeployCommand extends BaseCommand {
         for (let source of sources) {
           const fullPath = path.join(themeDir, source);
           let stats;
+          let linkStats;
 
           try {
+            linkStats = await this.fileSystem.lstat(fullPath);
             stats = await this.fileSystem.stat(fullPath);
           } catch (e) {
             this.logger.printError(
@@ -291,7 +293,9 @@ export class DeployCommand extends BaseCommand {
             continue;
           }
 
-          if (stats.isFile()) {
+          if (linkStats.isSymbolicLink()) {
+            skipped.push({ path: source, reason: 'symlink' });
+          } else if (stats.isFile()) {
             if (!this._shouldSkipUpload(source, options)) {
               uploadPaths.push(source);
             } else {
@@ -361,6 +365,7 @@ export class DeployCommand extends BaseCommand {
                   filePath,
                   this.fileSystem,
                   {
+                    rootDir: themeDir,
                     quiet: true,
                     onStatus: (msg) => uploadProgress.update(slot, msg),
                     onSkip: ({ reason }) => {

@@ -417,7 +417,7 @@ finqu theme deploy [sources...]
 
 When no sources are specified, all local theme assets will be uploaded. To name a file that starts with `-`, put it after `--`, as in `finqu theme deploy -- --clean`.
 
-> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. A named file that is refused is reported as skipped.
+> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. Also never uploaded: `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/`, `.git/` or `.docker/config.json`, at any depth. Symbolic links are never followed by deploy, watch or dev; a link, or a file under a linked directory, is reported as skipped with reason `symlink`. A named file that is refused is reported as skipped. Downloads decode `gzip`, `deflate` and `br`; any other `Content-Encoding` fails that file.
 
 > **Note:** By default, `config/settings_data.json` and the `.draft/` directory are not uploaded, to avoid overwriting theme settings from the backend theme editor. Use `--config-pull` / `--config-push` for settings, and `--assets-pull` for compiled `public/` assets. When both `--config-push` and `--config-pull` are set, settings are pushed first (no pre-pull overwrite), then pulled after deploy.
 

@@ -42,6 +42,7 @@ describe('DeployCommand', () => {
 
     // Create mock file system
     mockFileSystem = {
+      lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false }),
       stat: vi.fn().mockResolvedValue({
         isFile: () => true,
         isDirectory: () => false,
