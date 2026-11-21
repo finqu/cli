@@ -133,7 +133,9 @@ export class FileSystem {
   }
 
   /**
-   * Checks if a path should be included in theme
+   * Built-in safety list: whether a path may ever be uploaded or written.
+   * Rejects credentials, key material, `.git`, `node_modules` and every dot
+   * segment at any depth. `.finquignore` cannot override it.
    * @param {string} filePath File path to check
    * @returns {boolean} Whether path should be included
    */
@@ -142,8 +144,13 @@ export class FileSystem {
     if (SENSITIVE_PATH_PATTERNS.some((re) => re.test(normalized))) {
       return false;
     }
-    // Hidden files and directories
-    if (filePath.indexOf('/.') > -1 || filePath.indexOf('\\.') > -1) {
+    // Hidden files and directories at any depth, including the theme root.
+    // A leading "./" and a lone "." (the root itself) are not hidden names.
+    const withoutDotPrefix = normalized.replace(/^(\.\/)+/, '');
+    if (
+      withoutDotPrefix !== '.' &&
+      withoutDotPrefix.split('/').some((segment) => segment.startsWith('.'))
+    ) {
       return false;
     }
     // Git files

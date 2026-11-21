@@ -9,6 +9,7 @@ import {
   ConcurrentProgress,
   runWithConcurrency,
 } from '../core/concurrent-progress.js';
+import { PATH_VERDICT, loadThemeIgnore } from '../io/themeIgnore.js';
 import {
   SETTINGS_DATA_PATH,
   pullSettingsData,
@@ -104,28 +105,36 @@ export class DeployCommand extends BaseCommand {
   }
 
   /**
-   * Whether a relative path should be skipped for upload
+   * Why a relative path is not uploaded
    * @param {string} relativePath
    * @param {Object} options
-   * @returns {boolean}
+   * @param {import('../io/themeIgnore.js').ThemeIgnore} themeIgnore
+   * @returns {'excluded'|'ignored'|null} `excluded` for the built-in safety
+   *   list and the CLI's own rules, `ignored` for `.finquignore`, or null
+   *   when the file may be uploaded
    * @private
    */
-  _shouldSkipUpload(relativePath, options) {
+  _skipReason(relativePath, options, themeIgnore) {
     if (this._isConfigFile(relativePath)) {
       this.logger.printVerbose(
         `Skipping upload of CLI configuration file: ${relativePath}`,
       );
-      return true;
+      return 'excluded';
     }
-    if (!this.fileSystem.checkPath(relativePath)) {
+    const verdict = themeIgnore.classify(relativePath);
+    if (verdict === PATH_VERDICT.EXCLUDED) {
       this.logger.printVerbose(`Skipping excluded file: ${relativePath}`);
-      return true;
+      return 'excluded';
+    }
+    if (verdict === PATH_VERDICT.IGNORED) {
+      this.logger.printVerbose(`Skipping ignored file: ${relativePath}`);
+      return 'ignored';
     }
     if (relativePath.startsWith('.draft/')) {
       this.logger.printVerbose(
         `Skipping upload of sensitive file: ${relativePath}`,
       );
-      return true;
+      return 'excluded';
     }
     if (
       relativePath === SETTINGS_DATA_PATH &&
@@ -134,9 +143,9 @@ export class DeployCommand extends BaseCommand {
       this.logger.printVerbose(
         `Skipping upload of sensitive file: ${relativePath}`,
       );
-      return true;
+      return 'excluded';
     }
-    return false;
+    return null;
   }
 
   /**
@@ -180,8 +189,10 @@ export class DeployCommand extends BaseCommand {
       let compileError = null;
       const errors = [];
       const skipped = [];
+      const ignored = [];
       const themeDir = this.config.get('themeDir');
       const themeApi = this.app.services.themeApi;
+      const themeIgnore = await loadThemeIgnore(this.fileSystem, themeDir);
 
       // --- Pre-pull settings (if --config-pull without --config-push) ---
       // Skip pre-pull when pushing so local settings are not overwritten first.
@@ -191,6 +202,7 @@ export class DeployCommand extends BaseCommand {
           fileSystem: this.fileSystem,
           themeDir,
           logger: this.logger,
+          themeIgnore,
         });
       }
 
@@ -212,6 +224,12 @@ export class DeployCommand extends BaseCommand {
         for (const asset of remoteAssets) {
           if (asset.type === 'file' && !localRelativeFiles.has(asset.path)) {
             if (this._shouldSkipClean(asset.path)) {
+              continue;
+            }
+            if (themeIgnore.classify(asset.path) !== PATH_VERDICT.ALLOWED) {
+              this.logger.printVerbose(
+                `Skipping deletion of ignored remote file: ${asset.path}`,
+              );
               continue;
             }
             toDelete.push(asset.path);
@@ -296,20 +314,27 @@ export class DeployCommand extends BaseCommand {
           if (linkStats.isSymbolicLink()) {
             skipped.push({ path: source, reason: 'symlink' });
           } else if (stats.isFile()) {
-            if (!this._shouldSkipUpload(source, options)) {
+            const reason = this._skipReason(source, options, themeIgnore);
+            if (!reason) {
               uploadPaths.push(source);
+            } else if (reason === 'ignored') {
+              ignored.push(source);
             } else {
-              // A file named on the command line that is not uploaded must be
-              // visible to automation; excluded files found by a directory
-              // walk are ordinary exclusions and stay silent.
-              skipped.push({ path: source, reason: 'excluded' });
+              // A file named on the command line that the safety list or the
+              // CLI refuses must be visible to automation; excluded files
+              // found by a directory walk are ordinary exclusions and stay
+              // silent.
+              skipped.push({ path: source, reason });
             }
           } else if (stats.isDirectory()) {
             const dirFiles = await this.fileSystem.getFiles(fullPath);
             for (const file of dirFiles) {
               const relativePath = path.relative(themeDir, file);
-              if (!this._shouldSkipUpload(relativePath, options)) {
+              const reason = this._skipReason(relativePath, options, themeIgnore);
+              if (!reason) {
                 uploadPaths.push(relativePath);
+              } else if (reason === 'ignored') {
+                ignored.push(relativePath);
               }
             }
           }
@@ -322,8 +347,11 @@ export class DeployCommand extends BaseCommand {
         const allLocalFiles = await this.fileSystem.getFiles(themeDir);
         for (const file of allLocalFiles) {
           const relativePath = path.relative(themeDir, file);
-          if (!this._shouldSkipUpload(relativePath, options)) {
+          const reason = this._skipReason(relativePath, options, themeIgnore);
+          if (!reason) {
             uploadPaths.push(relativePath);
+          } else if (reason === 'ignored') {
+            ignored.push(relativePath);
           }
         }
       }
@@ -332,10 +360,21 @@ export class DeployCommand extends BaseCommand {
       if (options.configPush && !uploadPaths.includes(SETTINGS_DATA_PATH)) {
         const settingsPath = path.join(themeDir, SETTINGS_DATA_PATH);
         if (await this.fileSystem.exists(settingsPath)) {
-          uploadPaths.push(SETTINGS_DATA_PATH);
-          this.logger.printVerbose(
-            `Including ${SETTINGS_DATA_PATH} (--config-push)`,
-          );
+          if (
+            themeIgnore.classify(SETTINGS_DATA_PATH) === PATH_VERDICT.IGNORED
+          ) {
+            if (!ignored.includes(SETTINGS_DATA_PATH)) {
+              ignored.push(SETTINGS_DATA_PATH);
+            }
+            this.logger.printVerbose(
+              `Not pushing ${SETTINGS_DATA_PATH}: ignored by .finquignore`,
+            );
+          } else {
+            uploadPaths.push(SETTINGS_DATA_PATH);
+            this.logger.printVerbose(
+              `Including ${SETTINGS_DATA_PATH} (--config-push)`,
+            );
+          }
         } else {
           this.logger.printInfo(
             `Local ${SETTINGS_DATA_PATH} not found; nothing to push.`,
@@ -457,12 +496,16 @@ export class DeployCommand extends BaseCommand {
 
       // --- Post-pull settings (if --config-pull) ---
       if (options.configPull) {
-        await pullSettingsData({
+        const pulled = await pullSettingsData({
           themeApi,
           fileSystem: this.fileSystem,
           themeDir,
           logger: this.logger,
+          themeIgnore,
         });
+        if (pulled?.ignored && !ignored.includes(SETTINGS_DATA_PATH)) {
+          ignored.push(SETTINGS_DATA_PATH);
+        }
       }
 
       // --- Pull compiled assets (if --assets-pull and compiled) ---
@@ -472,7 +515,13 @@ export class DeployCommand extends BaseCommand {
           fileSystem: this.fileSystem,
           themeDir,
           logger: this.logger,
+          themeIgnore,
         });
+        for (const assetPath of syncResult.ignored ?? []) {
+          if (!ignored.includes(assetPath)) {
+            ignored.push(assetPath);
+          }
+        }
         for (const err of syncResult.errors) {
           errors.push({
             path: err.path,
@@ -486,6 +535,13 @@ export class DeployCommand extends BaseCommand {
         );
       }
 
+      if (ignored.length > 0) {
+        this.logger.printInfo(
+          `Ignored ${ignored.length} file(s) matched by .finquignore.`,
+        );
+        this.logger.printVerboseList('Ignored files:', ignored);
+      }
+
       this.logger.printSuccess(
         `Successfully deployed ${deployedCount} files`,
       );
@@ -496,6 +552,7 @@ export class DeployCommand extends BaseCommand {
         removedCount,
         errors,
         skipped,
+        ignored,
         uploaded: uploadedPaths,
         compile: {
           attempted: shouldCompile && deployedCount > 0,

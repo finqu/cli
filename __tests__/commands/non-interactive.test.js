@@ -35,7 +35,9 @@ function createFileSystem(overrides = {}) {
     checkPath: vi.fn().mockReturnValue(true),
     exists: vi.fn().mockResolvedValue(false),
     mkdir: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockResolvedValue('content'),
+    readFile: vi.fn().mockRejectedValue(
+      Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+    ),
     ...overrides,
   };
 }
@@ -404,6 +406,7 @@ describe('non-interactive command registry', () => {
         downloaded: ['a.liquid'],
         failed: [],
         skipped: [],
+        ignored: [],
       });
     });
   });
@@ -433,6 +436,7 @@ describe('non-interactive command registry', () => {
           uploaded: ['templates/a.liquid'],
           failed: [],
           skipped: [],
+          ignored: [],
           compile: { attempted: true, ok: true, error: null },
         },
       });

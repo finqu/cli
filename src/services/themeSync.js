@@ -6,6 +6,7 @@ import {
   ConcurrentProgress,
   runWithConcurrency,
 } from '../core/concurrent-progress.js';
+import { PATH_VERDICT } from '../io/themeIgnore.js';
 
 export const SETTINGS_DATA_PATH = 'config/settings_data.json';
 export const PUBLIC_PREFIX = 'public/';
@@ -19,14 +20,24 @@ const BATCH_SIZE = 10;
  * @param {Object} params.fileSystem File system
  * @param {string} params.themeDir Local theme directory
  * @param {Object} params.logger Logger
- * @returns {Promise<{success: boolean, skipped?: boolean}>}
+ * @param {import('../io/themeIgnore.js').ThemeIgnore} [params.themeIgnore]
+ *   When given, a settings file it ignores is not written
+ * @returns {Promise<{success: boolean, skipped?: boolean, ignored?: boolean}>}
  */
 export async function pullSettingsData({
   themeApi,
   fileSystem,
   themeDir,
   logger,
+  themeIgnore,
 }) {
+  if (themeIgnore?.classify(SETTINGS_DATA_PATH) === PATH_VERDICT.IGNORED) {
+    logger.printVerbose(
+      `Not syncing ${SETTINGS_DATA_PATH}: ignored by .finquignore`,
+    );
+    return { success: true, skipped: true, ignored: true };
+  }
+
   const localPath = path.join(themeDir, SETTINGS_DATA_PATH);
   logger.printStatus(`Syncing ${SETTINGS_DATA_PATH} from theme...`);
 
@@ -63,18 +74,24 @@ export async function pullSettingsData({
  * @param {Object} params.fileSystem File system
  * @param {string} params.themeDir Local theme directory
  * @param {Object} params.logger Logger
- * @returns {Promise<{downloadedCount: number, removedCount: number, errors: Array}>}
+ * @param {import('../io/themeIgnore.js').ThemeIgnore} [params.themeIgnore]
+ *   When given, ignored paths are neither written nor pruned locally
+ * @returns {Promise<{downloadedCount: number, removedCount: number, errors: Array, ignored: string[]}>}
  */
 export async function syncPublicAssets({
   themeApi,
   fileSystem,
   themeDir,
   logger,
+  themeIgnore,
 }) {
   logger.printStatus('Syncing compiled public/ assets from theme...');
 
   const assets = await themeApi.getAssets();
   const remotePublicPaths = [];
+  const ignored = [];
+  const isIgnored = (assetPath) =>
+    themeIgnore?.classify(assetPath) === PATH_VERDICT.IGNORED;
 
   for (const asset of assets || []) {
     if (
@@ -82,7 +99,11 @@ export async function syncPublicAssets({
       typeof asset.path === 'string' &&
       asset.path.startsWith(PUBLIC_PREFIX)
     ) {
-      remotePublicPaths.push(asset.path);
+      if (isIgnored(asset.path)) {
+        ignored.push(asset.path);
+      } else {
+        remotePublicPaths.push(asset.path);
+      }
     }
   }
 
@@ -147,6 +168,9 @@ export async function syncPublicAssets({
     const localPublicFiles = await fileSystem.getFiles(publicDir);
     for (const absolutePath of localPublicFiles) {
       const relativePath = path.relative(themeDir, absolutePath);
+      if (isIgnored(relativePath)) {
+        continue;
+      }
       if (!remoteSet.has(relativePath)) {
         try {
           await fileSystem.unlink(absolutePath);
@@ -179,5 +203,5 @@ export async function syncPublicAssets({
     logger.printInfo('No compiled public/ assets to sync.');
   }
 
-  return { downloadedCount, removedCount, errors };
+  return { downloadedCount, removedCount, errors, ignored };
 }

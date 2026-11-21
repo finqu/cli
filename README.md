@@ -382,7 +382,7 @@ finqu theme download [sources...]
 | -------------- | ------------------------------------------------------------- |
 | `[sources...]` | Optional file paths to download specific files or directories |
 
-When no sources are specified, all theme assets will be downloaded to your local directory. A file the server refuses (any status other than 2xx) is reported as failed and the command exits non-zero. Each file is written to a temporary file and renamed when complete, so a failed download never changes the local file.
+When no sources are specified, all theme assets will be downloaded to your local directory. A path that [`.finquignore`](#excluding-files-with-finquignore) or the built-in exclusions cover is never written locally and is reported as ignored; it does not fail the run. A file the server refuses (any status other than 2xx) is reported as failed and the command exits non-zero. Each file is written to a temporary file and renamed when complete, so a failed download never changes the local file.
 
 #### list
 
@@ -408,7 +408,7 @@ finqu theme deploy [sources...]
 
 | Option           | Description                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
-| `--clean`        | Remove remote theme assets not found locally (never removes `public/` compiled assets)         |
+| `--clean`        | Remove remote theme assets not found locally (never removes `public/` compiled assets, or files matched by `.finquignore` or the built-in exclusions) |
 | `--config-push`  | Upload local `config/settings_data.json` to the theme                                            |
 | `--config-pull`  | Download remote `config/settings_data.json` before and after deploy                              |
 | `--assets-pull`  | After compile, download compiled `public/` assets (and prune stale local hashed files)         |
@@ -417,7 +417,7 @@ finqu theme deploy [sources...]
 
 When no sources are specified, all local theme assets will be uploaded. To name a file that starts with `-`, put it after `--`, as in `finqu theme deploy -- --clean`.
 
-> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. Also never uploaded: `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/`, `.git/` or `.docker/config.json`, at any depth. Symbolic links are never followed by deploy, watch or dev; a link, or a file under a linked directory, is reported as skipped with reason `symlink`. A named file that is refused is reported as skipped. Downloads decode `gzip`, `deflate` and `br`; any other `Content-Encoding` fails that file.
+> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. Every file or directory whose name starts with a dot is excluded too, at any depth including the theme root (`.envrc`, `.pypirc`, `.vercel/`). Also never uploaded: `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/`, `.git/` or `.docker/config.json`, at any depth. Symbolic links are never followed by deploy, watch or dev; a link, or a file under a linked directory, is reported as skipped with reason `symlink`. A named file that is refused is reported as skipped. Files matched by `.finquignore` are reported as ignored instead; see [Excluding files with .finquignore](#excluding-files-with-finquignore). Downloads decode `gzip`, `deflate` and `br`; any other `Content-Encoding` fails that file.
 
 > **Note:** By default, `config/settings_data.json` and the `.draft/` directory are not uploaded, to avoid overwriting theme settings from the backend theme editor. Use `--config-pull` / `--config-push` for settings, and `--assets-pull` for compiled `public/` assets. When both `--config-push` and `--config-pull` are set, settings are pushed first (no pre-pull overwrite), then pulled after deploy.
 
@@ -468,9 +468,56 @@ finqu theme watch
 | ------------------------ | --------------------------------------------------- |
 | `--ignore <patterns...>` | Patterns to ignore (in addition to default ignores) |
 
-This command monitors your local theme directory for changes and automatically uploads modified files to your connected theme.
+This command monitors your local theme directory for changes and automatically uploads modified files to your connected theme. Files matched by `.finquignore` or the built-in exclusions are not uploaded, and `--ignore` patterns (same syntax as `.finquignore`) apply after the file's rules. `watch` re-reads `.finquignore` when it changes, so you don't need to restart it. The patterns only add exclusions; the built-in exclusions can't be lifted from the command line either.
 
 > **Deprecated:** `finqu theme watch` is deprecated and will be removed in a future release. Use `finqu theme dev` for local theme rendering and a better development workflow.
+
+### Excluding files with .finquignore
+
+Put a `.finquignore` file in the theme root (the directory the command uses as `themeDir`) to keep files out of `deploy`, `watch` and `download`. It uses `.gitignore` syntax: `#` starts a comment, blank lines are skipped, `!` re-includes a path, `dir/` matches a directory, and a leading `/` anchors a pattern to the theme root. Paths are matched relative to the theme root with forward slashes. A missing file means no extra rules. The CLI reads it once per command run; `watch` reads it again when the file changes.
+
+```gitignore
+# Build output and sources that never belong in the theme
+*.map
+assets/raw/
+/notes.md
+
+# Ignore everything in vendor/ except one file
+assets/vendor/*
+!assets/vendor/keep.js
+```
+
+As in Git, you can't re-include a file whose parent directory is ignored. Matching is case-insensitive.
+
+**What it covers**
+
+| Command | Effect of a matching path |
+| --- | --- |
+| `deploy` (all files, named files and directory walks) | Not uploaded. Includes `--config-push` for `config/settings_data.json`. |
+| `deploy --clean` | The remote file is never deleted. |
+| `deploy --config-pull`, `--assets-pull` | Not written locally, and ignored `public/` files are not pruned. |
+| `download` | Never written locally; reported as ignored. |
+| `watch` | Not uploaded. A local deletion of an ignored file does not remove the remote copy. |
+
+`finqu theme dev` runs the separate `finqu-theme-dev` tool, which does not read `.finquignore`.
+
+**Built-in exclusions**
+
+These always apply, and a `!` rule in `.finquignore` can't override them:
+
+- credential and key files: `.env`, `.env.*`, the `.finqu-*` files, `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/` or `.docker/config.json`
+- `.git` and `node_modules`
+- every file or directory whose name starts with a dot, at any depth including the theme root
+- `.finquignore` itself, which is never uploaded
+- paths outside the theme directory
+
+`deploy --clean` never deletes a remote file that matches these either.
+
+**Reporting**
+
+`deploy` and `download` list files that only `.finquignore` matched in an `ignored` array. Ignored files don't make a `--json` or `--non-interactive` run exit `1`. Credential files and symbolic links that `deploy` refuses stay in `skipped`, and `skipped` still sets exit code `1`. A built-in exclusion found while walking a directory is silent, as before; one you name on the command line is reported in `skipped`. `download` never writes a built-in exclusion either (a remote `.env` or `.draft/` file, for example). It reports those as ignored rather than skipped, so downloading a theme that holds such paths still exits `0`.
+
+In a terminal, a run prints how many files were ignored. Add `--verbose` to list the names.
 
 ### Utility Commands
 
@@ -580,7 +627,7 @@ If `.env` holds no access token, the CLI makes no token check at startup, no ref
 | Exit code | Meaning                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------- |
 | `0`       | Everything succeeded                                                                     |
-| `1`       | A file failed or was skipped (for example over 10 MB), the compile failed, or the command errored |
+| `1`       | A file failed or was skipped (for example over 10 MB), the compile failed, or the command errored. A file listed in `ignored` does not count |
 | `2`       | The command was refused, or a flag is missing, unknown or invalid (including flags Commander rejects, such as an unknown option) |
 
 `--json` implies `--non-interactive`, so a run with `--json` alone never prompts either. With `--json`, the result is one line on stdout and all other output goes to stderr. A flag error prints the same line with `"code":"USAGE_ERROR"` and exit code `2`. `--help` prints help and exits `0` with no JSON line.
@@ -590,8 +637,10 @@ If `.env` holds no access token, the CLI makes no token check at startup, no ref
 The result of a run looks like this:
 
 ```json
-{"ok":true,"command":"theme deploy","exitCode":0,"error":null,"result":{"deployedCount":1,"removedCount":0,"uploaded":["templates/index.liquid"],"failed":[],"skipped":[],"compile":{"attempted":true,"ok":true,"error":null}}}
+{"ok":true,"command":"theme deploy","exitCode":0,"error":null,"result":{"deployedCount":1,"removedCount":0,"uploaded":["templates/index.liquid"],"failed":[],"skipped":[],"ignored":["assets/app.js.map"],"compile":{"attempted":true,"ok":true,"error":null}}}
 ```
+
+`ignored` holds the paths of files that [`.finquignore`](#excluding-files-with-finquignore) kept out of the run, as strings relative to the theme root. `theme download` has the same array next to `downloaded`, `failed` and `skipped`. Ignored files are not failures, so they don't change `ok` or the exit code. `skipped` is for refusals (a credential file or symbolic link, a file over 10 MB) and still exits `1`.
 
 ## Environment Variables
 

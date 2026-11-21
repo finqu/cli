@@ -146,6 +146,7 @@ describe('buildEnvelope', () => {
         uploaded: ['a.liquid'],
         failed: [],
         skipped: [],
+        ignored: [],
         compile: { attempted: true, ok: true, error: null },
       },
     });
@@ -227,6 +228,12 @@ describe('buildEnvelope', () => {
         errors: [],
         skipped: [],
       }).result,
-    ).toEqual({ downloadedCount: 1, downloaded: ['a'], failed: [], skipped: [] });
+    ).toEqual({
+      downloadedCount: 1,
+      downloaded: ['a'],
+      failed: [],
+      skipped: [],
+      ignored: [],
+    });
   });
 });

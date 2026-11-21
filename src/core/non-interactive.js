@@ -139,6 +139,7 @@ function summarize(key, result) {
         uploaded: result.uploaded ?? [],
         failed: (result.errors ?? []).map((e) => toFailure(e, 'upload')),
         skipped: result.skipped ?? [],
+        ignored: result.ignored ?? [],
         compile: toCompile(result.compile),
       };
     case 'theme delete':
@@ -154,6 +155,7 @@ function summarize(key, result) {
         downloaded: result.downloaded ?? [],
         failed: (result.errors ?? []).map((e) => toFailure(e, 'download')),
         skipped: result.skipped ?? [],
+        ignored: result.ignored ?? [],
       };
     case 'theme configure':
       return result.store ?? null;
@@ -165,7 +167,7 @@ function summarize(key, result) {
 /**
  * Whether a command result counts as a failure in machine mode.
  * A skipped file or a failed compile is a failure even when the command
- * itself reports no error.
+ * itself reports no error. An ignored file (`.finquignore`) is not a failure.
  * @param {Object|undefined} result Command result
  * @returns {boolean} True when the run must exit non-zero
  */
