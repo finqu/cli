@@ -1,6 +1,6 @@
 {
   "name": "@finqu/cli",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Finqu CLI - tool for theme development",
   "type": "module",
   "main": "dist/index.js",
