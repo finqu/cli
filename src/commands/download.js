@@ -9,6 +9,7 @@ import {
   ConcurrentProgress,
   runWithConcurrency,
 } from '../core/concurrent-progress.js';
+import { PATH_VERDICT, loadThemeIgnore } from '../io/themeIgnore.js';
 
 // Batch size for parallel downloads
 const BATCH_SIZE = 10;
@@ -65,13 +66,33 @@ export class DownloadCommand extends BaseCommand {
     try {
       let downloadedCount = 0;
       const errors = [];
+      const skipped = [];
+      const ignored = [];
       const downloadedPaths = [];
       const themeDir = this.config.get('themeDir');
+      const themeIgnore = await loadThemeIgnore(this.fileSystem, themeDir);
       const downloadPaths = [];
+
+      // Remote paths are never trusted to name a local file: whatever the
+      // safety list or .finquignore refuses to upload is not written either.
+      const acceptPath = (assetPath, { directory = false } = {}) => {
+        if (
+          themeIgnore.classify(assetPath, { directory }) === PATH_VERDICT.ALLOWED
+        ) {
+          return true;
+        }
+        if (!directory) {
+          ignored.push(assetPath);
+        }
+        this.logger.printVerbose(`Skipping ignored path: ${assetPath}`);
+        return false;
+      };
 
       if (sources && sources.length) {
         for (const source of sources) {
-          downloadPaths.push(source);
+          if (acceptPath(source)) {
+            downloadPaths.push(source);
+          }
         }
       } else {
         this.logger.printStatus('Downloading all assets from theme...');
@@ -85,8 +106,10 @@ export class DownloadCommand extends BaseCommand {
 
           for (const asset of assets) {
             if (asset.type !== 'dir') {
-              downloadPaths.push(asset.path);
-            } else {
+              if (acceptPath(asset.path)) {
+                downloadPaths.push(asset.path);
+              }
+            } else if (acceptPath(asset.path, { directory: true })) {
               this.logger.printVerbose(
                 `Ensuring local directory exists for: ${asset.path}`,
               );
@@ -105,6 +128,7 @@ export class DownloadCommand extends BaseCommand {
       if (downloadPaths.length > 0) {
         const progress = new ConcurrentProgress(
           Math.min(BATCH_SIZE, downloadPaths.length),
+          this.progressOptions(),
         );
 
         this.logger.suspendVerbose();
@@ -134,6 +158,8 @@ export class DownloadCommand extends BaseCommand {
                 if (success) {
                   downloadedCount++;
                   downloadedPaths.push(assetPath);
+                } else {
+                  skipped.push({ path: assetPath, reason: 'not_downloaded' });
                 }
               } catch (e) {
                 if (e.status === 404) {
@@ -178,6 +204,13 @@ export class DownloadCommand extends BaseCommand {
         );
       }
 
+      if (ignored.length > 0) {
+        this.logger.printInfo(
+          `Ignored ${ignored.length} file(s) (.finquignore and built-in exclusions).`,
+        );
+        this.logger.printVerboseList('Ignored files:', ignored);
+      }
+
       if (downloadedCount > 0) {
         this.logger.printSuccess(
           `Successfully downloaded ${downloadedCount} files`,
@@ -189,7 +222,10 @@ export class DownloadCommand extends BaseCommand {
       return {
         success: errors.length === 0,
         downloadedCount,
+        downloaded: downloadedPaths,
         errors,
+        skipped,
+        ignored,
       };
     } catch (err) {
       if (err instanceof AppError) {

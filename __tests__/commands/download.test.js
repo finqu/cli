@@ -42,6 +42,10 @@ describe('DownloadCommand', () => {
       exists: vi.fn().mockResolvedValue(false),
       mkdir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      checkPath: vi.fn().mockReturnValue(true),
+      readFile: vi.fn().mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+      ),
     };
 
     // Create mock config
@@ -114,7 +118,10 @@ describe('DownloadCommand', () => {
       expect(result).toEqual({
         success: true,
         downloadedCount: 1,
+        downloaded: [source],
         errors: [],
+        skipped: [],
+        ignored: [],
       });
     });
 
@@ -144,7 +151,10 @@ describe('DownloadCommand', () => {
       expect(result).toEqual({
         success: true,
         downloadedCount: 3,
+        downloaded: expect.arrayContaining(sources),
         errors: [],
+        skipped: [],
+        ignored: [],
       });
     });
 

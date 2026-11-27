@@ -52,6 +52,43 @@ function runAuth() {
 }
 
 /**
+ * Store domain from CLI config (.env FINQU_STORE_DOMAIN).
+ * @param {Object} config Config manager
+ * @returns {string} Hostname or URL, or empty string
+ */
+export function resolveStoreDomain(config) {
+  if (!config || typeof config.get !== 'function') {
+    return '';
+  }
+
+  const domain = config.get('storeDomain');
+  if (domain != null && String(domain).trim() !== '') {
+    return String(domain).trim();
+  }
+
+  const store = config.get('store');
+  if (store?.domain != null && String(store.domain).trim() !== '') {
+    return String(store.domain).trim();
+  }
+
+  return '';
+}
+
+/**
+ * Child env for finqu-theme-dev serve.
+ * Passes FINQU_STORE_DOMAIN so the binary uses the CLI-configured store.
+ * @param {string} storeDomain Hostname or URL
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function serveSpawnEnv(storeDomain) {
+  const env = { ...process.env };
+  if (storeDomain) {
+    env.FINQU_STORE_DOMAIN = storeDomain;
+  }
+  return env;
+}
+
+/**
  * ThemeDevCommand class for local theme development using finqu-theme-dev
  */
 export class ThemeDevCommand extends BaseCommand {
@@ -112,16 +149,23 @@ export class ThemeDevCommand extends BaseCommand {
       this.logger.printSuccess('Authentication complete.');
     }
 
-    // 3. Build serve args
+    // 3. Build serve args. Pass FINQU_STORE_DOMAIN so preview uses the
+    // store from .env (finqu theme configure), not only credentials.json.
     const dir = options.dir || this.config.get('themeDir') || process.cwd();
     const port = options.port || '3000';
+    const storeDomain = resolveStoreDomain(this.config);
     const args = ['serve', '--port', String(port), '--dir', dir];
+    const env = serveSpawnEnv(storeDomain);
 
-    this.logger.printStatus(`Starting local dev server on port ${port}...`);
+    this.logger.printStatus(
+      storeDomain
+        ? `Starting local dev server on port ${port} (${storeDomain})...`
+        : `Starting local dev server on port ${port}...`,
+    );
 
     // 4. Spawn serve process
     return new Promise((resolve) => {
-      const child = spawn(BINARY_NAME, args, { stdio: 'inherit' });
+      const child = spawn(BINARY_NAME, args, { stdio: 'inherit', env });
       let isCleaningUp = false;
 
       const cleanup = () => {

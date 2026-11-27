@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WatchCommand, createWatchCommand } from '../../src/commands/watch.js';
 import { ThemeWatcher } from '../../src/core/theme-watcher.js';
 import { AppError } from '../../src/core/error.js';
+import { ThemeIgnore } from '../../src/io/themeIgnore.js';
 
 vi.mock(import('../../src/core/theme-watcher.js'), () => {
   const ThemeWatcher = vi.fn(() => ({
@@ -59,6 +60,9 @@ describe('WatchCommand', () => {
       }),
       getFiles: vi.fn().mockResolvedValue([]),
       checkPath: vi.fn().mockReturnValue(true),
+      readFile: vi.fn().mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+      ),
     };
 
     // Create mock config
@@ -140,6 +144,8 @@ describe('WatchCommand', () => {
         mockFileSystem,
         mockLogger,
         1000,
+        undefined,
+        expect.any(ThemeIgnore),
       );
 
       const watcherInstance = ThemeWatcher.mock.results[0].value;

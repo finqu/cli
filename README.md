@@ -76,8 +76,10 @@ These global options can be used with any command:
 | --------------------- | ------------------------------ | -------- |
 | `-v, --verbose`       | Enable detailed logging output | `false`  |
 | `-c, --config <path>` | Path to the configuration file | `./.env` |
+| `--non-interactive`   | Never prompt; see [Non-interactive mode](#non-interactive-mode) | `false` |
+| `--json`              | Print one JSON result line on stdout (theme download, deploy, delete and configure). Implies `--non-interactive` | `false` |
 | `--help`              | Display help information       |          |
-| `--version`           | Display version information    |          |
+| `--version`           | Display version information (only before a command; `theme configure` has its own `--version <name>`) |          |
 
 ### Authentication
 
@@ -162,10 +164,12 @@ finqu app update
 | Option                   | Description                                               |
 | ------------------------ | --------------------------------------------------------- |
 | `--app-id <id>`          | App ID (uses linked app if omitted)                       |
-| `--configuration <json>` | Configuration as JSON string                              |
+| `--configuration <json>` | Configuration fields to change, as JSON                   |
 | `--listing <json>`       | Listing data as JSON string                               |
 | `--redirect-uri <uri>`   | OAuth redirect URI (use `\|` separator for multiple)      |
 | `--locations <codes...>` | ISO country codes to restrict availability (omit for all) |
+
+Only the configuration fields you pass change; the rest are kept. For example, `--configuration '{"http":{"base_uri":"https://example.com"}}'` changes just the base URI. Objects merge field by field, `null` removes a field, and a list (such as `locales`) replaces the whole list.
 
 #### delete
 
@@ -298,6 +302,49 @@ finqu app replay --topic orders/create
 finqu app replay --url http://localhost:4000/hooks --index 1
 ```
 
+#### dev
+
+Expose an app running on localhost through a public HTTPS tunnel, and point the draft app at it while the command runs:
+
+```bash
+finqu app dev
+```
+
+| Option                | Description                                                   | Default  |
+| --------------------- | ------------------------------------------------------------- | -------- |
+| `-p, --port <number>` | Local port your app listens on                                | detected |
+| `--app-id <id>`       | App ID (uses linked app if omitted)                           |          |
+| `--tunnel-url <url>`  | Use your own HTTPS tunnel (ngrok, etc.) instead of Cloudflare |          |
+
+**Finding your app's port.** Without `--port`, the CLI looks for a dev server already running from the current directory or one of its subdirectories (this uses `lsof` on macOS and `ss` on Linux). If several are running, you choose one. If none is running, it uses a port set with `-p`/`--port`/`PORT=` in the `dev` script of `package.json`, then the framework's default port (Next.js 3000, Vite 5173, Astro 4321), then 3000.
+
+**Framework config.** Next.js and Vite block requests from hosts they don't recognise, so a tunnel URL gets a 403 until it is allowed. When the CLI detects one of these frameworks, it offers to add a wildcard entry to the config:
+
+| Framework                                      | File            | Entry added                                        |
+| ---------------------------------------------- | --------------- | -------------------------------------------------- |
+| Next.js                                        | `next.config.*` | `allowedDevOrigins: ['*.trycloudflare.com']`       |
+| Vite (also SvelteKit, Remix and React Router)  | `vite.config.*` | `server: { allowedHosts: ['.trycloudflare.com'] }` |
+
+The entry is permanent and keeps working when the tunnel URL changes. Both frameworks restart their dev server on their own when the config changes. For Nuxt, Astro, config shapes the CLI doesn't recognise, or non-interactive runs, it prints the line to add instead.
+
+**Next.js app URL.** In a Next.js project, `NEXT_PUBLIC_APP_URL` is set to the tunnel URL while the command runs, then put back to its old value when you stop (or removed, if the CLI added it). It goes in `.env.development.local` if that file already defines the variable, because that file takes priority in development. Otherwise it goes in `.env.local`, which is created if needed. Other lines in the file are left alone. Next.js reloads env files without a restart.
+
+By default this starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) (`https://<random>.trycloudflare.com`), which needs no Cloudflare account. If `cloudflared` is not on your `PATH`, the CLI downloads it to `~/.finqu/bin` on first use and checks it against the release's SHA256 checksum.
+
+While the tunnel is up:
+
+- The app's `http.base_uri` points at the tunnel URL.
+- Tunnel versions of any `localhost` redirect URIs are added next to the existing ones.
+
+Only the base URI and redirect URIs are changed; the rest of the app's configuration is never sent. Press Ctrl+C to set the base URI back and remove the tunnel redirect URIs. If the base URI was changed elsewhere while the command ran, it is left as it is. If the CLI is killed before it can restore it, the original base URI stays saved in `.finqu-dev-session.json` and is restored the next time you run `finqu app dev`.
+
+Notes:
+
+- Only draft apps can be used. The command refuses to modify a published app, so live merchants are never pointed at your machine.
+- If the Finqu server can't change the base URI on its own, the command leaves the app unchanged and prints the base URI and redirect URIs to set by hand.
+- The tunnel URL changes on every run, and anyone who knows it can reach your app. Verify the `Finqu-Signature` header on incoming requests.
+- Quick Tunnels are a Cloudflare testing service with no uptime guarantee. If you hit problems, use `--tunnel-url` with another tunnel.
+
 ### Theme Commands
 
 All theme-related commands are grouped under `finqu theme`:
@@ -315,6 +362,14 @@ This interactive command walks you through:
 1. Selecting a theme to work with
 2. Saving the configuration to your configuration file
 
+To skip the prompts, pass the target as flags:
+
+```bash
+finqu theme configure --channel <id> --theme <id> --version <name> [--resource-url <url>]
+```
+
+The version must be one that the API lists for the theme, otherwise the command fails and saves nothing. `--resource-url` sets the API host in place of the one stored by `sign-in`.
+
 #### download
 
 Download theme assets from the connected Finqu theme:
@@ -327,7 +382,7 @@ finqu theme download [sources...]
 | -------------- | ------------------------------------------------------------- |
 | `[sources...]` | Optional file paths to download specific files or directories |
 
-When no sources are specified, all theme assets will be downloaded to your local directory.
+When no sources are specified, all theme assets will be downloaded to your local directory. A path that [`.finquignore`](#excluding-files-with-finquignore) or the built-in exclusions cover is never written locally and is reported as ignored; it does not fail the run. A file the server refuses (any status other than 2xx) is reported as failed and the command exits non-zero. Each file is written to a temporary file and renamed when complete, so a failed download never changes the local file.
 
 #### list
 
@@ -353,14 +408,16 @@ finqu theme deploy [sources...]
 
 | Option           | Description                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
-| `--clean`        | Remove remote theme assets not found locally (never removes `public/` compiled assets)         |
+| `--clean`        | Remove remote theme assets not found locally (never removes `public/` compiled assets, or files matched by `.finquignore` or the built-in exclusions) |
 | `--config-push`  | Upload local `config/settings_data.json` to the theme                                            |
 | `--config-pull`  | Download remote `config/settings_data.json` before and after deploy                              |
 | `--assets-pull`  | After compile, download compiled `public/` assets (and prune stale local hashed files)         |
 | `--no-compile`   | Skip asset compilation on the server after upload                                                |
 | `[sources...]`   | Optional file paths to deploy specific files or directories                                        |
 
-When no sources are specified, all local theme assets will be uploaded.
+When no sources are specified, all local theme assets will be uploaded. To name a file that starts with `-`, put it after `--`, as in `finqu theme deploy -- --clean`.
+
+> **Note:** Credential files are never uploaded, in any mode and even when named on the command line: `.env`, `.env.*`, the `.finqu-*` files the CLI writes, and the configuration file given with `-c`. Every file or directory whose name starts with a dot is excluded too, at any depth including the theme root (`.envrc`, `.pypirc`, `.vercel/`). Also never uploaded: `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/`, `.git/` or `.docker/config.json`, at any depth. Symbolic links are never followed by deploy, watch or dev; a link, or a file under a linked directory, is reported as skipped with reason `symlink`. A named file that is refused is reported as skipped. Files matched by `.finquignore` are reported as ignored instead; see [Excluding files with .finquignore](#excluding-files-with-finquignore). Downloads decode `gzip`, `deflate` and `br`; any other `Content-Encoding` fails that file.
 
 > **Note:** By default, `config/settings_data.json` and the `.draft/` directory are not uploaded, to avoid overwriting theme settings from the backend theme editor. Use `--config-pull` / `--config-push` for settings, and `--assets-pull` for compiled `public/` assets. When both `--config-push` and `--config-pull` are set, settings are pushed first (no pre-pull overwrite), then pulled after deploy.
 
@@ -411,9 +468,56 @@ finqu theme watch
 | ------------------------ | --------------------------------------------------- |
 | `--ignore <patterns...>` | Patterns to ignore (in addition to default ignores) |
 
-This command monitors your local theme directory for changes and automatically uploads modified files to your connected theme.
+This command monitors your local theme directory for changes and automatically uploads modified files to your connected theme. Files matched by `.finquignore` or the built-in exclusions are not uploaded, and `--ignore` patterns (same syntax as `.finquignore`) apply after the file's rules. `watch` re-reads `.finquignore` when it changes, so you don't need to restart it. The patterns only add exclusions; the built-in exclusions can't be lifted from the command line either.
 
 > **Deprecated:** `finqu theme watch` is deprecated and will be removed in a future release. Use `finqu theme dev` for local theme rendering and a better development workflow.
+
+### Excluding files with .finquignore
+
+Put a `.finquignore` file in the theme root (the directory the command uses as `themeDir`) to keep files out of `deploy`, `watch` and `download`. It uses `.gitignore` syntax: `#` starts a comment, blank lines are skipped, `!` re-includes a path, `dir/` matches a directory, and a leading `/` anchors a pattern to the theme root. Paths are matched relative to the theme root with forward slashes. A missing file means no extra rules. The CLI reads it once per command run; `watch` reads it again when the file changes.
+
+```gitignore
+# Build output and sources that never belong in the theme
+*.map
+assets/raw/
+/notes.md
+
+# Ignore everything in vendor/ except one file
+assets/vendor/*
+!assets/vendor/keep.js
+```
+
+As in Git, you can't re-include a file whose parent directory is ignored. Matching is case-insensitive.
+
+**What it covers**
+
+| Command | Effect of a matching path |
+| --- | --- |
+| `deploy` (all files, named files and directory walks) | Not uploaded. Includes `--config-push` for `config/settings_data.json`. |
+| `deploy --clean` | The remote file is never deleted. |
+| `deploy --config-pull`, `--assets-pull` | Not written locally, and ignored `public/` files are not pruned. |
+| `download` | Never written locally; reported as ignored. |
+| `watch` | Not uploaded. A local deletion of an ignored file does not remove the remote copy. |
+
+`finqu theme dev` runs the separate `finqu-theme-dev` tool, which does not read `.finquignore`.
+
+**Built-in exclusions**
+
+These always apply, and a `!` rule in `.finquignore` can't override them:
+
+- credential and key files: `.env`, `.env.*`, the `.finqu-*` files, `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.netrc`, `.git-credentials`, `.pgpass`, `.htaccess`, `.htpasswd`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and anything under `.aws/`, `.ssh/`, `.gnupg/`, `.kube/` or `.docker/config.json`
+- `.git` and `node_modules`
+- every file or directory whose name starts with a dot, at any depth including the theme root
+- `.finquignore` itself, which is never uploaded
+- paths outside the theme directory
+
+`deploy --clean` never deletes a remote file that matches these either.
+
+**Reporting**
+
+`deploy` and `download` list files that only `.finquignore` matched in an `ignored` array. Ignored files don't make a `--json` or `--non-interactive` run exit `1`. Credential files and symbolic links that `deploy` refuses stay in `skipped`, and `skipped` still sets exit code `1`. A built-in exclusion found while walking a directory is silent, as before; one you name on the command line is reported in `skipped`. `download` never writes a built-in exclusion either (a remote `.env` or `.draft/` file, for example). It reports those as ignored rather than skipped, so downloading a theme that holds such paths still exits `0`.
+
+In a terminal, a run prints how many files were ignored. Add `--verbose` to list the names.
 
 ### Utility Commands
 
@@ -514,6 +618,30 @@ This command provides a complete development experience:
 
 If the specified port is already in use, the command will automatically find and use the next available port.
 
+## Non-interactive mode
+
+For scripts and sandboxes, `--non-interactive` (or `FINQU_NON_INTERACTIVE=1`) guarantees that the CLI never prompts. Only `theme download`, `theme deploy`, `theme delete` and `theme configure` are allowed; every other command, including `sign-in`, `app dev` and `theme dev`, is refused.
+
+If `.env` holds no access token, the CLI makes no token check at startup, no refresh call and sends no `Authorization` header, which suits an environment where a proxy adds it. An expired token fails the run instead of asking for credentials: refreshing a token needs the API client key and secret, which the CLI only asks for in a prompt, so a refresh cannot run without one.
+
+| Exit code | Meaning                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `0`       | Everything succeeded                                                                     |
+| `1`       | A file failed or was skipped (for example over 10 MB), the compile failed, or the command errored. A file listed in `ignored` does not count |
+| `2`       | The command was refused, or a flag is missing, unknown or invalid (including flags Commander rejects, such as an unknown option) |
+
+`--json` implies `--non-interactive`, so a run with `--json` alone never prompts either. With `--json`, the result is one line on stdout and all other output goes to stderr. A flag error prints the same line with `"code":"USAGE_ERROR"` and exit code `2`. `--help` prints help and exits `0` with no JSON line.
+
+`theme download` fails a file when the server answers with a status other than 2xx, lists it in `failed` and exits `1`. It writes each file to a temporary file and renames it when complete, so a failed download never changes the local file.
+
+The result of a run looks like this:
+
+```json
+{"ok":true,"command":"theme deploy","exitCode":0,"error":null,"result":{"deployedCount":1,"removedCount":0,"uploaded":["templates/index.liquid"],"failed":[],"skipped":[],"ignored":["assets/app.js.map"],"compile":{"attempted":true,"ok":true,"error":null}}}
+```
+
+`ignored` holds the paths of files that [`.finquignore`](#excluding-files-with-finquignore) kept out of the run, as strings relative to the theme root. `theme download` has the same array next to `downloaded`, `failed` and `skipped`. Ignored files are not failures, so they don't change `ok` or the exit code. `skipped` is for refusals (a credential file or symbolic link, a file over 10 MB) and still exits `1`.
+
 ## Environment Variables
 
 Finqu CLI supports the following environment variables:
@@ -521,6 +649,7 @@ Finqu CLI supports the following environment variables:
 | Variable                  | Description                                                                 |
 | ------------------------- | --------------------------------------------------------------------------- |
 | `FINQU_CONFIG`            | Override the default configuration file path                                |
+| `FINQU_NON_INTERACTIVE`   | Set to `1` (or `true`) to enable `--non-interactive`                        |
 | `FINQU_API_CLIENT_ID`     | API Client key to use for authentication (alternative to using --key)       |
 | `FINQU_API_CLIENT_SECRET` | API Client secret to use for authentication (alternative to using --secret) |
 

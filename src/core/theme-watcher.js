@@ -1,6 +1,12 @@
+import fs from 'fs';
 import path from 'path';
 import watch from 'watch';
 import { AppError } from './error.js';
+import {
+  IGNORE_FILE_NAME,
+  PATH_VERDICT,
+  ThemeIgnore,
+} from '../io/themeIgnore.js';
 
 // Debounce implementation
 function debounce(fn, delay) {
@@ -19,6 +25,7 @@ export class ThemeWatcher {
     logger,
     debounceDelay = 1000,
     maxQueueSize = 1000,
+    themeIgnore = new ThemeIgnore(fileSystem),
   ) {
     this.themeDir = themeDir;
     this.themeApi = themeApi;
@@ -26,6 +33,8 @@ export class ThemeWatcher {
     this.logger = logger;
     this.debounceDelay = debounceDelay;
     this.maxQueueSize = maxQueueSize;
+    this.themeIgnore = themeIgnore;
+    this.ignoreFilePath = path.join(themeDir, IGNORE_FILE_NAME);
     this.isProcessing = false;
 
     this.uploadQueue = new Set();
@@ -97,7 +106,7 @@ export class ThemeWatcher {
                 relativePath,
                 path.join(this.themeDir, relativePath),
                 this.fileSystem,
-                { quiet: true },
+                { quiet: true, rootDir: this.themeDir },
               )
               .then((success) => {
                 if (success !== false) {
@@ -184,6 +193,12 @@ export class ThemeWatcher {
 
       // Now handle file events
       if (curr && !curr.isDirectory()) {
+        // Also drops deletions: removing an ignored file locally never
+        // removes its remote copy.
+        if (this.themeIgnore.classify(relativePath) !== PATH_VERDICT.ALLOWED) {
+          this.logger.printVerbose(`Ignored file change: ${relativePath}`);
+          return;
+        }
         if (prev === null) {
           // File created
           this.logger.printVerbose(`File created: ${relativePath}`);
@@ -245,6 +260,32 @@ export class ThemeWatcher {
   }
 
   /**
+   * Re-read `.finquignore` after it changed and drop queued uploads and
+   * deletions it now ignores. If the file cannot be read, the previous rules
+   * stay in force.
+   * @private
+   */
+  async _reloadIgnore() {
+    try {
+      await this.themeIgnore.load(this.themeDir);
+    } catch (e) {
+      this.logger.printError(
+        `Could not reload ${IGNORE_FILE_NAME}; keeping the previous rules`,
+        e.message || e,
+      );
+      return;
+    }
+    for (const queue of [this.uploadQueue, this.deleteQueue]) {
+      for (const queued of [...queue]) {
+        if (this.themeIgnore.classify(queued) !== PATH_VERDICT.ALLOWED) {
+          queue.delete(queued);
+        }
+      }
+    }
+    this.logger.printInfo(`Reloaded ${IGNORE_FILE_NAME}`);
+  }
+
+  /**
    * Validates that a path is safe (doesn't try to traverse outside theme dir)
    * @param {string} relativePath Relative path to check
    * @returns {boolean} True if path is safe, false otherwise
@@ -287,6 +328,7 @@ export class ThemeWatcher {
    * Stops watching for changes and cleans up resources
    */
   stop() {
+    fs.unwatchFile(this.ignoreFilePath);
     if (this.watcher && typeof this.watcher.close === 'function') {
       try {
         this.watcher.close();
@@ -323,6 +365,15 @@ export class ThemeWatcher {
         this.themeDir,
         watchOptions,
         this._handleFileChange.bind(this), // Bind the handler to the instance
+      );
+
+      // The tree walk skips dotfiles, so .finquignore is polled on its own. The
+      // tree keeps watching ignored paths too, so that removing a rule takes
+      // effect without a restart.
+      fs.watchFile(
+        this.ignoreFilePath,
+        { interval: watchOptions.interval * 1000 },
+        () => this._reloadIgnore(),
       );
 
       // Handle watch errors (if the watchTree implementation supports it)

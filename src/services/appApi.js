@@ -7,6 +7,16 @@ import { AppError } from '../core/error.js';
 const DEFAULT_AUTH_DOMAIN = 'account.finqu.com';
 
 /**
+ * Whether an error from patchApp means the server can't do partial updates
+ * yet (it predates them), so nothing was changed.
+ * @param {Object} err Rejection from the HTTP client
+ * @returns {boolean}
+ */
+export function isPartialUpdateUnsupported(err) {
+  return err?.status === 405;
+}
+
+/**
  * AppApi class for managing app operations
  */
 export class AppApi {
@@ -82,6 +92,23 @@ export class AppApi {
   }
 
   /**
+   * Make a PATCH request with form-encoded body
+   * @param {string} path URL path relative to base
+   * @param {Object} data Form data
+   * @returns {Promise<Object>} Response data
+   */
+  async _patch(path, data = {}) {
+    await this._ensureAuth();
+    const url = `${this.baseUrl}${path}`;
+    this.logger.printVerbose(`PATCH ${url}`);
+    return this.httpClient.request({
+      url,
+      method: 'PATCH',
+      form: data,
+    });
+  }
+
+  /**
    * Make a DELETE request
    * @param {string} path URL path relative to base
    * @returns {Promise<Object>} Response data
@@ -125,16 +152,11 @@ export class AppApi {
   }
 
   /**
-   * Update an existing app
-   * @param {number|string} appId App ID
+   * Encode app update fields as form data
    * @param {Object} data Update data
-   * @param {string} [data.configuration] Configuration JSON string
-   * @param {Object} [data.listing] Listing data keyed by locale
-   * @param {string} [data.redirect_uri] OAuth redirect URI
-   * @param {Array|null} [data.locations] Country codes or null for all
-   * @returns {Promise<void>}
+   * @returns {Object} Form data
    */
-  async updateApp(appId, data) {
+  _updateForm(data) {
     const formData = {};
     if (data.configuration) {
       formData.configuration =
@@ -155,7 +177,35 @@ export class AppApi {
       formData.locations =
         data.locations === null ? null : JSON.stringify(data.locations);
     }
-    return this._put(`/${appId}`, formData);
+    return formData;
+  }
+
+  /**
+   * Update an existing app. The configuration sent replaces the fields that
+   * getApp returns; use patchApp to change only some of them.
+   * @param {number|string} appId App ID
+   * @param {Object} data Update data
+   * @param {string} [data.configuration] Configuration JSON string
+   * @param {Object} [data.listing] Listing data keyed by locale
+   * @param {string} [data.redirect_uri] OAuth redirect URI
+   * @param {Array|null} [data.locations] Country codes or null for all
+   * @returns {Promise<void>}
+   */
+  async updateApp(appId, data) {
+    return this._put(`/${appId}`, this._updateForm(data));
+  }
+
+  /**
+   * Partially update an app: only the configuration fields sent change
+   * (JSON Merge Patch: objects merge, null removes a field, lists replace).
+   * Servers that can't do partial updates answer 405; see
+   * isPartialUpdateUnsupported().
+   * @param {number|string} appId App ID
+   * @param {Object} data Same fields as updateApp
+   * @returns {Promise<void>}
+   */
+  async patchApp(appId, data) {
+    return this._patch(`/${appId}`, this._updateForm(data));
   }
 
   /**

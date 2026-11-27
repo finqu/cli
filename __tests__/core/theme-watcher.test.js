@@ -6,8 +6,12 @@ import path from 'path';
 vi.mock('fs', () => ({
   default: {
     stat: vi.fn(),
+    watchFile: vi.fn(),
+    unwatchFile: vi.fn(),
   },
   stat: vi.fn(),
+  watchFile: vi.fn(),
+  unwatchFile: vi.fn(),
 }));
 
 // Fix the watch module mock - don't use variables before initialization

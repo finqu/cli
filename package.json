@@ -1,6 +1,6 @@
 {
   "name": "@finqu/cli",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "Finqu CLI - tool for theme development",
   "type": "module",
   "main": "dist/index.js",
@@ -27,6 +27,7 @@
     "fast-glob": "^3.3.0",
     "flat": "^6.0.1",
     "http-terminator": "^3.2.0",
+    "ignore": "^7.0.16",
     "logtrine": "^1.1.1",
     "mime-types": "^3.0.1",
     "oauth": "^0.10.2",

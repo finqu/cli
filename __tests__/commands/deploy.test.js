@@ -42,12 +42,16 @@ describe('DeployCommand', () => {
 
     // Create mock file system
     mockFileSystem = {
+      lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false }),
       stat: vi.fn().mockResolvedValue({
         isFile: () => true,
         isDirectory: () => false,
       }),
       getFiles: vi.fn().mockResolvedValue([]),
       checkPath: vi.fn().mockReturnValue(true),
+      readFile: vi.fn().mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+      ),
       exists: vi.fn().mockResolvedValue(false),
       mkdir: vi.fn().mockResolvedValue(undefined),
       unlink: vi.fn().mockResolvedValue(undefined),
@@ -152,6 +156,10 @@ describe('DeployCommand', () => {
         deployedCount: 1,
         removedCount: 0,
         errors: [],
+        skipped: [],
+        ignored: [],
+        uploaded: [source],
+        compile: { attempted: true, ok: true, error: null },
       });
     });
 
@@ -184,6 +192,10 @@ describe('DeployCommand', () => {
         deployedCount: 3,
         removedCount: 0,
         errors: [],
+        skipped: [],
+        ignored: [],
+        uploaded: sources,
+        compile: { attempted: true, ok: true, error: null },
       });
     });
 

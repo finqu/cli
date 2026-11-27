@@ -101,7 +101,13 @@ describe('DeleteCommand', () => {
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
         'Successfully deleted 1 files',
       );
-      expect(result).toEqual({ success: true, deletedCount: 1, errors: [] });
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 1,
+        deleted: ['path/to/asset.liquid'],
+        errors: [],
+        compile: { attempted: true, ok: true, error: null },
+      });
     });
 
     it('should delete multiple assets', async () => {
@@ -123,7 +129,13 @@ describe('DeleteCommand', () => {
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
         'Successfully deleted 3 files',
       );
-      expect(result).toEqual({ success: true, deletedCount: 3, errors: [] });
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 3,
+        deleted: expect.arrayContaining(sources),
+        errors: [],
+        compile: { attempted: true, ok: true, error: null },
+      });
     });
 
     it('should batch delete operations when there are many sources', async () => {
@@ -139,7 +151,13 @@ describe('DeleteCommand', () => {
       expect(mockLogger.printSuccess).toHaveBeenCalledWith(
         'Successfully deleted 25 files',
       );
-      expect(result).toEqual({ success: true, deletedCount: 25, errors: [] });
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 25,
+        deleted: expect.arrayContaining(sources),
+        errors: [],
+        compile: { attempted: true, ok: true, error: null },
+      });
     });
 
     it('should compile assets after deletion by default', async () => {

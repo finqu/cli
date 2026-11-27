@@ -73,6 +73,14 @@ const mockAppListenCmd = {
   execute: vi.fn(),
   setApp: vi.fn(),
 };
+const mockAppDevCmd = {
+  name: 'dev',
+  syntax: 'dev',
+  description: 'Expose local app over a tunnel',
+  group: 'app',
+  execute: vi.fn(),
+  setApp: vi.fn(),
+};
 const mockAppLinkCmd = {
   name: 'link',
   syntax: 'link <appId>',
@@ -220,6 +228,9 @@ vi.mock('../../src/commands/theme-dev.js', () => ({
 vi.mock('../../src/commands/app-listen.js', () => ({
   createAppListenCommand: vi.fn(() => mockAppListenCmd),
 }));
+vi.mock('../../src/commands/app-dev.js', () => ({
+  createAppDevCommand: vi.fn(() => mockAppDevCmd),
+}));
 vi.mock('../../src/commands/app-link.js', () => ({
   createAppLinkCommand: vi.fn(() => mockAppLinkCmd),
 }));
@@ -327,6 +338,7 @@ describe('CommandRegistry', () => {
       'watch',
       'theme-dev',
       'app-listen',
+      'app-dev',
       'app-link',
       'app-list',
       'app-info',
@@ -364,7 +376,7 @@ describe('CommandRegistry', () => {
     registry = new CommandRegistry(mockApp);
     expect(registry.app).toBe(mockApp);
     // Initialization logic remains the same regarding commands
-    expect(registry.commands.length).toBe(25);
+    expect(registry.commands.length).toBe(26);
   });
 
   describe('registerCommands', () => {
@@ -407,7 +419,7 @@ describe('CommandRegistry', () => {
       expect(storefrontGroupCmd).toBeDefined();
 
       // The action handlers should be set up for all commands
-      expect(Object.keys(registry.commandActions).length).toBe(25);
+      expect(Object.keys(registry.commandActions).length).toBe(26);
       expect(registry.commandActions.configure).toBeDefined();
       expect(registry.commandActions.download).toBeDefined();
       expect(registry.commandActions['sign-in']).toBeDefined();

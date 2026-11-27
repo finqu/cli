@@ -5,6 +5,7 @@
 import { BaseCommand } from './base.js';
 import { AppError } from '../core/error.js';
 import { ThemeWatcher } from '../core/theme-watcher.js'; // Import the new watcher
+import { loadThemeIgnore } from '../io/themeIgnore.js';
 
 /**
  * WatchCommand class for watching file changes and deploying them
@@ -59,6 +60,11 @@ export class WatchCommand extends BaseCommand {
 
     try {
       const themeDir = this.config.get('themeDir');
+      const themeIgnore = await loadThemeIgnore(
+        this.fileSystem,
+        themeDir,
+        options?.ignore ?? [],
+      );
       // Instantiate the watcher with dependencies
       const watcher = new ThemeWatcher(
         themeDir,
@@ -66,6 +72,8 @@ export class WatchCommand extends BaseCommand {
         this.fileSystem, // Pass the fileSystem instance from BaseCommand
         this.logger,
         1000, // Debounce delay in ms
+        undefined, // Default queue size limit
+        themeIgnore,
       );
 
       // Start the watcher

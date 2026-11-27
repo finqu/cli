@@ -2,6 +2,8 @@
  * HTTP client service for Finqu CLI
  * Abstracts HTTP requests for better testability
  */
+import { PassThrough } from 'stream';
+import zlib from 'zlib';
 import request from 'request';
 
 /**
@@ -120,20 +122,77 @@ export class HttpClient {
       logOptions,
     );
 
-    // Handle streaming requests differently
+    // A streamed request resolves with the response body only after a 2xx
+    // status. Any other status rejects, so a caller never writes an error page
+    // as if it were the content it asked for.
     if (options.stream) {
       return new Promise((resolve, reject) => {
         const req = request(finalOptions);
+        const body = new PassThrough();
+        let state = 'pending';
 
         req.on('error', (err) => {
           this.logger.printVerbose(
             `Stream request failed: ${options.url}`,
             err,
           );
-          reject(err);
+          if (state === 'resolved') {
+            body.destroy(err);
+          } else if (state === 'pending') {
+            state = 'rejected';
+            reject(err);
+          }
         });
 
-        resolve(req);
+        req.on('response', (res) => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            state = 'rejected';
+            req.abort();
+            this.logger.printVerbose(
+              `Stream request failed: ${options.url}`,
+              { status: res.statusCode },
+            );
+            reject({
+              status: res.statusCode,
+              error: `Request failed with status ${res.statusCode}`,
+            });
+            return;
+          }
+
+          // `request` inflates gzip and deflate itself; brotli is decoded here.
+          // A body in any other encoding would be saved as undecoded bytes, so
+          // it fails instead.
+          const encoding = String(res.headers['content-encoding'] || '')
+            .trim()
+            .toLowerCase();
+          const requestInflates = finalOptions.gzip;
+          const supported =
+            encoding === '' ||
+            encoding === 'identity' ||
+            encoding === 'br' ||
+            (requestInflates && (encoding === 'gzip' || encoding === 'deflate'));
+          if (!supported) {
+            state = 'rejected';
+            req.abort();
+            reject({
+              status: res.statusCode,
+              error: `Unsupported Content-Encoding: ${encoding}`,
+            });
+            return;
+          }
+
+          // Piping must start in the same tick as the response, or the first
+          // chunks are lost.
+          if (encoding === 'br') {
+            const decoder = zlib.createBrotliDecompress();
+            decoder.on('error', (err) => body.destroy(err));
+            req.pipe(decoder).pipe(body);
+          } else {
+            req.pipe(body);
+          }
+          state = 'resolved';
+          resolve(body);
+        });
       });
     }
 

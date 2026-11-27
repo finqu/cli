@@ -1,4 +1,5 @@
 import path from 'path';
+import { randomBytes } from 'crypto';
 import mime from 'mime-types';
 import { normalizeRemoveOptions } from '../core/concurrent-progress.js';
 /**
@@ -109,10 +110,13 @@ export class ThemeApi {
    * @param {string} _merchantId Merchant ID (unused; merchant is implied by API host)
    * @param {Object} store Store object
    * @param {string} themeId Theme ID
+   * @param {Object} [paging] Paging of the list
+   * @param {number} [paging.page] Page number, from 1. The API serves at most 50 items per page
    * @returns {Promise<Array>} List of theme versions
    */
-  async listVersions(_merchantId, store, themeId) {
-    const endpoint = `${this.getApiBase()}/channels/${store.id}/themes/${themeId}/versions`;
+  async listVersions(_merchantId, store, themeId, paging = {}) {
+    const query = paging.page > 1 ? `?page=${paging.page}` : '';
+    const endpoint = `${this.getApiBase()}/channels/${store.id}/themes/${themeId}/versions${query}`;
     this.logger.printVerbose(`Fetching theme versions from ${endpoint}`);
 
     try {
@@ -320,89 +324,55 @@ export class ThemeApi {
       }
     }
 
+    const requestUrl = `${
+      this.apiAssetPath
+    }/assets?asset[key]=${encodeURIComponent(assetName)}`;
+
+    // Use specific headers for downloading assets (match old-cli behavior)
+    const assetHeaders = {
+      Accept:
+        'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      Connection: 'keep-alive',
+    };
+
+    // The destination is only touched after a 2xx response, and only by a
+    // rename of a completed temporary file, so a failed download never
+    // truncates or replaces an existing local file.
+    let body;
     try {
-      return new Promise((resolve, reject) => {
-        const file = fileSystem.createWriteStream(filePath);
+      body = await this.httpClient.request({
+        url: requestUrl,
+        method: 'GET',
+        json: false, // Important: Set to false to get raw data
+        encoding: null, // Get binary data
+        stream: true, // Enable streaming
+        headers: assetHeaders, // Pass the defined headers
+        gzip: true, // Enable gzip compression
+        forever: true, // Keep connections alive
+      });
+    } catch (error) {
+      if (!quiet) {
+        this.logger.printError(
+          `HTTP request failed for asset: ${assetName}`,
+          error,
+        );
+      }
+      throw error;
+    }
 
-        file.on('open', () => {
-          const requestUrl = `${
-            this.apiAssetPath
-          }/assets?asset[key]=${encodeURIComponent(assetName)}`;
+    const tempPath = path.join(
+      dirname,
+      `.${path.basename(filePath)}.${process.pid}.${randomBytes(4).toString('hex')}.part`,
+    );
 
-          // Use specific headers for downloading assets (match old-cli behavior)
-          const assetHeaders = {
-            Accept:
-              'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'max-age=0',
-            Connection: 'keep-alive',
-          };
-
-          // Use httpClient.request with streaming option
-          this.httpClient
-            .request({
-              url: requestUrl,
-              method: 'GET',
-              json: false, // Important: Set to false to get raw data
-              encoding: null, // Get binary data
-              stream: true, // Enable streaming
-              headers: assetHeaders, // Pass the defined headers
-              gzip: true, // Enable gzip compression
-              forever: true, // Keep connections alive
-            })
-            .then((stream) => {
-              stream
-                .pipe(file)
-                .on('finish', () => {
-                  if (!quiet) {
-                    this.logger.printSuccess(`Downloaded asset: ${assetName}`);
-                    this.logger.printVerbose(
-                      `Asset ${assetName} fetch complete`,
-                    );
-                  }
-                  resolve(true);
-                })
-                .on('error', (error) => {
-                  // Clean up the file if piping fails
-                  file.destroy();
-                  if (!quiet) {
-                    this.logger.printError(
-                      `Failed to write asset to file: ${assetName}`,
-                      error,
-                    );
-                    this.logger.printVerbose(
-                      `Asset ${assetName} write error!`,
-                    );
-                  }
-                  reject(error);
-                });
-
-              stream.on('error', (error) => {
-                // Clean up the file if the request stream errors
-                file.destroy();
-                if (!quiet) {
-                  this.logger.printError(
-                    `Request stream failed for asset: ${assetName}`,
-                    error,
-                  );
-                }
-                reject(error);
-              });
-            })
-            .catch((error) => {
-              // Clean up the file if the initial request promise fails
-              file.destroy();
-              if (!quiet) {
-                this.logger.printError(
-                  `HTTP request failed for asset: ${assetName}`,
-                  error,
-                );
-              }
-              reject(error);
-            });
-        });
+    try {
+      await new Promise((resolve, reject) => {
+        const file = fileSystem.createWriteStream(tempPath);
 
         file.on('error', (error) => {
+          body.destroy();
           if (!quiet) {
             this.logger.printError(
               `Failed to create write stream for: ${filePath}`,
@@ -411,13 +381,38 @@ export class ThemeApi {
           }
           reject(error);
         });
+
+        body.on('error', (error) => {
+          file.destroy();
+          if (!quiet) {
+            this.logger.printError(
+              `Request stream failed for asset: ${assetName}`,
+              error,
+            );
+          }
+          reject(error);
+        });
+
+        file.on('finish', resolve);
+        file.on('open', () => body.pipe(file));
       });
-    } catch (err) {
-      if (!quiet) {
-        this.logger.printError('An error occurred while downloading asset', err);
+
+      await fileSystem.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await fileSystem.unlink(tempPath);
+      } catch {
+        // The temporary file may never have been created; the download error
+        // is the one to report.
       }
-      throw err;
+      throw error;
     }
+
+    if (!quiet) {
+      this.logger.printSuccess(`Downloaded asset: ${assetName}`);
+      this.logger.printVerbose(`Asset ${assetName} fetch complete`);
+    }
+    return true;
   }
 
   /**
@@ -428,6 +423,11 @@ export class ThemeApi {
    * @param {Object} [options] Transfer options
    * @param {boolean} [options.quiet] Suppress per-file status/success logs
    * @param {Function} [options.onStatus] Status callback for progress UI
+   * @param {Function} [options.onSkip] Called with `{ reason }` when the file is
+   *   not uploaded and no error is thrown (`too_large`, `not_a_file` or
+   *   `symlink`)
+   * @param {string} [options.rootDir] Theme directory; when given, symbolic
+   *   links in any directory between it and the file are refused too
    * @returns {Promise<boolean>} True if upload was successful
    */
   async uploadAsset(assetName, filePath, fileSystem, options = {}) {
@@ -457,6 +457,33 @@ export class ThemeApi {
     }
 
     try {
+      // A symbolic link, or a file under one, is never followed: its target
+      // can be anywhere, including a credential file.
+      const probes = [];
+      if (options.rootDir) {
+        let probe = options.rootDir;
+        for (const segment of path
+          .relative(options.rootDir, filePath)
+          .split(path.sep)) {
+          probe = path.join(probe, segment);
+          probes.push(probe);
+        }
+      } else {
+        probes.push(filePath);
+      }
+      for (const candidate of probes) {
+        const linkStats = await fileSystem.lstat(candidate);
+        if (linkStats.isSymbolicLink()) {
+          if (!quiet) {
+            this.logger.printError(
+              `Refusing to upload symbolic link: ${assetName}`,
+            );
+          }
+          options.onSkip?.({ reason: 'symlink' });
+          return false;
+        }
+      }
+
       // Check if file exists and is a file
       const stats = await fileSystem.stat(filePath);
       if (!stats.isFile()) {
@@ -465,6 +492,7 @@ export class ThemeApi {
             `Asset ${assetName} is directory, skipping sync`,
           );
         }
+        options.onSkip?.({ reason: 'not_a_file' });
         return false;
       }
       // File size check (e.g., 10MB limit)
@@ -473,6 +501,7 @@ export class ThemeApi {
         this.logger.printError(
           `File ${assetName} is too large to upload (${(stats.size / 1024 / 1024).toFixed(2)} MB). Skipping.`,
         );
+        options.onSkip?.({ reason: 'too_large' });
         return false;
       }
     } catch (err) {

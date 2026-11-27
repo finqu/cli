@@ -24,51 +24,51 @@ describe('AppUpdateCommand', () => {
   });
 
   describe('execute', () => {
-    it('updates app with configuration', async () => {
-      mockApp.services.appApi.updateApp.mockResolvedValue(undefined);
+    it('changes only the configuration fields given', async () => {
+      mockApp.services.appApi.patchApp.mockResolvedValue(undefined);
 
       const result = await command.execute({
         configuration: '{"http":{"base_uri":"https://example.com"}}',
       });
 
-      expect(mockApp.services.appApi.updateApp).toHaveBeenCalledWith(42, {
+      expect(mockApp.services.appApi.patchApp).toHaveBeenCalledWith(42, {
         configuration: { http: { base_uri: 'https://example.com' } },
       });
       expect(result).toEqual({ success: true });
     });
 
     it('updates app with listing', async () => {
-      mockApp.services.appApi.updateApp.mockResolvedValue(undefined);
+      mockApp.services.appApi.patchApp.mockResolvedValue(undefined);
 
       await command.execute({
         listing: '{"default":{"name":"New Name"}}',
       });
 
-      expect(mockApp.services.appApi.updateApp).toHaveBeenCalledWith(42, {
+      expect(mockApp.services.appApi.patchApp).toHaveBeenCalledWith(42, {
         listing: { default: { name: 'New Name' } },
       });
     });
 
     it('updates app with redirect URI', async () => {
-      mockApp.services.appApi.updateApp.mockResolvedValue(undefined);
+      mockApp.services.appApi.patchApp.mockResolvedValue(undefined);
 
       await command.execute({
         redirectUri: 'https://example.com/callback',
       });
 
-      expect(mockApp.services.appApi.updateApp).toHaveBeenCalledWith(42, {
+      expect(mockApp.services.appApi.patchApp).toHaveBeenCalledWith(42, {
         redirect_uri: 'https://example.com/callback',
       });
     });
 
     it('updates app with locations', async () => {
-      mockApp.services.appApi.updateApp.mockResolvedValue(undefined);
+      mockApp.services.appApi.patchApp.mockResolvedValue(undefined);
 
       await command.execute({
         locations: ['FI', 'SE'],
       });
 
-      expect(mockApp.services.appApi.updateApp).toHaveBeenCalledWith(42, {
+      expect(mockApp.services.appApi.patchApp).toHaveBeenCalledWith(42, {
         locations: ['FI', 'SE'],
       });
     });
@@ -93,15 +93,32 @@ describe('AppUpdateCommand', () => {
       );
     });
 
+    it('changes nothing when the server cannot do partial updates', async () => {
+      mockApp.services.appApi.patchApp.mockRejectedValue({
+        status: 405,
+        error: 'method_not_allowed',
+      });
+
+      const result = await command.execute({
+        configuration: '{"http":{"base_uri":"https://example.com"}}',
+      });
+
+      expect(result.success).toBe(false);
+      expect(mockApp.services.appApi.updateApp).not.toHaveBeenCalled();
+      expect(mockApp.logger.printError).toHaveBeenCalledWith(
+        expect.stringContaining('does not support partial app updates'),
+      );
+    });
+
     it('uses --app-id override', async () => {
-      mockApp.services.appApi.updateApp.mockResolvedValue(undefined);
+      mockApp.services.appApi.patchApp.mockResolvedValue(undefined);
 
       await command.execute({
         appId: 99,
         redirectUri: 'https://example.com',
       });
 
-      expect(mockApp.services.appApi.updateApp).toHaveBeenCalledWith(
+      expect(mockApp.services.appApi.patchApp).toHaveBeenCalledWith(
         99,
         expect.any(Object),
       );
